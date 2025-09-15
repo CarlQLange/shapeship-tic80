@@ -1,0 +1,11 @@
+# TIC-80 generated files
+*.tic
+*.html
+*.js
+*.wasm
+
+# Temporary files
+.DS_Store
+*~
+*.swp
+*.swo
