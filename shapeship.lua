@@ -200,6 +200,17 @@ local pixel_types = {
         special_effect = "targeting", -- Makes all projectiles homing
         rarity = 3,      -- 3% base chance - very rare
         name = "Targeting"
+    },
+    accelerator = {
+        color = 5,       -- Light Green
+        health = 1,
+        can_shoot = false,
+        shoot_interval = 0,
+        is_core = false,
+        energy_cost = 3,
+        special_effect = "rate_boost", -- Increases all weapon fire rates by 4%
+        rarity = 20,     -- 20% base chance - uncommon
+        name = "Accelerator"
     }
 }
 
@@ -310,7 +321,7 @@ local building = {
     mouse_grid_y = 0,
     ship_area = {x = 10, y = 10, w = 150, h = 120}, -- Larger ship area
     palette_area = {x = 170, y = 10, w = 60, h = 120}, -- Adjusted palette position
-    available_parts = {"engine", "armor", "shooter", "laser", "dodge", "generator", "hardpoint", "repulsor", "magnet", "relay", "conduit", "catalyst", "targeting"},
+    available_parts = {"engine", "armor", "shooter", "laser", "dodge", "generator", "hardpoint", "repulsor", "magnet", "relay", "conduit", "catalyst", "targeting", "accelerator"},
     upgrade_mode = false,
     parts_added = 0,
     max_parts_to_add = 1,
@@ -341,7 +352,7 @@ function init_ship()
         {x=30, y=30, type="armor", health=pixel_types.armor.health},
         {x=31, y=30, type="armor", health=pixel_types.armor.health},
         {x=30, y=31, type="core", health=pixel_types.core.health},
-        {x=31, y=31, type="generator", health=pixel_types.generator.health},
+        {x=31, y=31, type="targeting", health=pixel_types.generator.health}, -- targeting for debug
         {x=32, y=31, type="shooter", health=pixel_types.shooter.health},
         {x=30, y=32, type="armor", health=pixel_types.armor.health},
         {x=31, y=32, type="armor", health=pixel_types.armor.health}
@@ -540,7 +551,7 @@ function update_shooting()
     for i, pixel in ipairs(player.pixels) do
         local pixel_def = pixel_types[pixel.type]
         if pixel.health > 0 then
-            if pixel_def.can_shoot and game.timer - player.last_shoot_times[i] >= pixel_def.shoot_interval then
+            if pixel_def.can_shoot and game.timer - player.last_shoot_times[i] >= get_modified_shoot_interval(pixel_def.shoot_interval) then
                 -- Check for synergy effects affecting this part
                 local synergy_effects = get_part_synergy_effects(pixel.x, pixel.y, pixel.type)
 
@@ -572,6 +583,7 @@ function update_shooting()
                             bullet.homing = true
                             bullet.target = nil
                             bullet.lifetime = 360
+                            bullet.turn_rate = get_homing_turn_rate(pixel.type)
                         end
 
                         table.insert(bullets, bullet)
@@ -585,7 +597,8 @@ function update_shooting()
                         type = pixel.type,
                         piercing = true,
                         damage_multiplier = synergy_effects.damage_multiplier or 1,
-                        synergy = "piercing_shot"
+                        synergy = "piercing_shot",
+                        angle = 0 -- Forward facing
                     }
 
                     -- Apply targeting if available
@@ -593,6 +606,7 @@ function update_shooting()
                         bullet.homing = true
                         bullet.target = nil
                         bullet.lifetime = 360
+                        bullet.turn_rate = math.rad(90) -- 90 degrees per second for targeting system
                     end
 
                     table.insert(bullets, bullet)
@@ -622,6 +636,7 @@ function update_shooting()
                             bullet.homing = true
                             bullet.target = nil
                             bullet.lifetime = 360
+                            bullet.turn_rate = get_homing_turn_rate(pixel.type)
                         end
 
                         table.insert(bullets, bullet)
@@ -647,7 +662,9 @@ function update_shooting()
                             type = pixel.type,
                             homing = true,
                             target = nil, -- Will be assigned when updating
-                            lifetime = 300 -- 5 seconds max
+                            lifetime = 300, -- 5 seconds max
+                            angle = 0, -- Forward facing initially
+                            turn_rate = get_homing_turn_rate("homing") -- Enhanced turning for missiles
                         })
                     end
                 elseif pixel.type == "explosive" then
@@ -672,6 +689,8 @@ function update_shooting()
                         bullet.homing = true
                         bullet.target = nil
                         bullet.lifetime = 360
+                        bullet.angle = 0 -- Forward facing
+                        bullet.turn_rate = math.rad(90) -- 90 degrees per second for targeting system
                     end
 
                     table.insert(bullets, bullet)
@@ -686,7 +705,9 @@ function update_shooting()
                             type = pixel.type,
                             homing = true,
                             target = nil, -- Will be assigned when updating
-                            lifetime = 360 -- 6 seconds max (longer than normal homing)
+                            lifetime = 360, -- 6 seconds max (longer than normal homing)
+                            angle = 0, -- Forward facing
+                            turn_rate = math.rad(90) -- 90 degrees per second for targeting system
                         })
                     else
                         -- Normal bullet
@@ -700,7 +721,7 @@ function update_shooting()
                 end
 
                 player.last_shoot_times[i] = game.timer
-            elseif pixel_def.special_effect == "repulse" and game.timer - player.last_shoot_times[i] >= pixel_def.shoot_interval then
+            elseif pixel_def.special_effect == "repulse" and game.timer - player.last_shoot_times[i] >= get_modified_shoot_interval(pixel_def.shoot_interval) then
                 -- Repulsor pulse effect
                 local ship_draw_x, ship_draw_y = get_ship_fighting_position()
                 repulsor_pulse(ship_draw_x + pixel.x * 6 + 3, ship_draw_y + pixel.y * 6 + 3)
@@ -783,7 +804,7 @@ function update_bullets()
         local bullet = bullets[i]
 
         if bullet.homing then
-            -- Homing missile behavior
+            -- Homing missile behavior with limited turning
             bullet.lifetime = bullet.lifetime - 1
 
             -- Find closest enemy if no target
@@ -792,19 +813,28 @@ function update_bullets()
             end
 
             if bullet.target then
-                -- Move toward target
+                -- Calculate desired angle to target
                 local dx = bullet.target.x + bullet.target.size/2 - bullet.x
                 local dy = bullet.target.y + bullet.target.size/2 - bullet.y
-                local distance = math.sqrt(dx*dx + dy*dy)
+                local desired_angle = math.atan2(dy, dx)
 
-                if distance > 0 then
-                    bullet.x = bullet.x + (dx / distance) * bullet.speed
-                    bullet.y = bullet.y + (dy / distance) * bullet.speed
-                end
-            else
-                -- No target, move forward
-                bullet.x = bullet.x + bullet.speed
+                -- Calculate angle difference and constrain turning
+                local angle_diff = desired_angle - bullet.angle
+
+                -- Normalize angle difference to [-π, π]
+                while angle_diff > math.pi do angle_diff = angle_diff - 2 * math.pi end
+                while angle_diff < -math.pi do angle_diff = angle_diff + 2 * math.pi end
+
+                -- Apply turn rate limit (per frame, so divide by 60)
+                local max_turn_this_frame = bullet.turn_rate / 60
+                local actual_turn = math.max(-max_turn_this_frame, math.min(max_turn_this_frame, angle_diff))
+
+                bullet.angle = bullet.angle + actual_turn
             end
+
+            -- Move in current direction
+            bullet.x = bullet.x + math.cos(bullet.angle) * bullet.speed
+            bullet.y = bullet.y + math.sin(bullet.angle) * bullet.speed
 
             -- Remove if lifetime expired
             if bullet.lifetime <= 0 then
@@ -2231,6 +2261,27 @@ local synergy_definitions = {
             burst_multiplier = 2.0,
             burst_duration = 120 -- 2 seconds
         }
+    },
+    accelerator_network = {
+        name = "Fire Control Network",
+        description = "3+ accelerators in line provide massive fire rate boost",
+        pattern_type = "line",
+        required_parts = {"accelerator", "accelerator", "accelerator"},
+        min_length = 3,
+        effects = {
+            rate_multiplier = 1.5 -- 50% faster fire rate for synergy
+        }
+    },
+    targeting_array = {
+        name = "Advanced Targeting",
+        description = "2+ targeting systems adjacent improve homing turn rate",
+        pattern_type = "adjacent",
+        required_parts = {"targeting", "targeting"},
+        min_count = 2,
+        effects = {
+            enhanced_homing = true,
+            turn_rate_multiplier = 2.0 -- Double turn rate for all homing projectiles
+        }
     }
 }
 
@@ -2260,8 +2311,43 @@ function count_parts_of_type(part_type)
     return count
 end
 
+function get_modified_shoot_interval(base_interval)
+    -- Calculate rate boost from accelerator parts
+    local accelerator_count = count_parts_of_type("accelerator")
+    local base_rate_boost = accelerator_count * 0.04 -- 4% per accelerator
+
+    -- Check for accelerator synergy (additional 50% boost)
+    local synergy_boost = 0
+    if active_synergies and active_synergies.accelerator_network then
+        synergy_boost = 0.5 -- 50% additional boost from synergy
+    end
+
+    -- Total rate boost (faster rate = lower interval)
+    local total_boost = base_rate_boost + synergy_boost
+    local modified_interval = base_interval / (1 + total_boost)
+
+    return math.max(1, math.floor(modified_interval)) -- Minimum 1 frame interval
+end
+
+function get_homing_turn_rate(bullet_type)
+    local base_turn_rate
+
+    if bullet_type == "homing" then
+        base_turn_rate = math.rad(120) -- 120 degrees per second for homing missiles
+    else
+        base_turn_rate = math.rad(60) -- 60 degrees per second for targeting system
+    end
+
+    -- Check for targeting synergy
+    if active_synergies and active_synergies.targeting_array then
+        base_turn_rate = base_turn_rate * 1.8 -- 80% boost with synergy (less than double)
+    end
+
+    return base_turn_rate
+end
+
 function select_random_part()
-    local available_parts = {"armor", "engine", "shooter", "generator", "laser", "dodge", "hardpoint", "repulsor", "homing", "explosive", "shield", "core", "magnet", "relay", "conduit", "catalyst", "targeting"}
+    local available_parts = {"armor", "engine", "shooter", "generator", "laser", "dodge", "hardpoint", "repulsor", "homing", "explosive", "shield", "core", "magnet", "relay", "conduit", "catalyst", "targeting", "accelerator"}
     local total_weight = 0
     local weights = {}
 

@@ -78,7 +78,7 @@ Complete reference for all ship parts, their effects, costs, and synergy combina
 - **Fire Rate**: Every 2 seconds (120 frames)
 - **Projectile**: Pulsing orange/red bullets (3x2 size)
 - **Explosion**:
-  - **Auto-Detonation**: Explodes after 2 seconds if no impact
+  - **Auto-Detonation**: Explodes after 1 second if no impact (reduced from 2s)
   - **Damage Radius**: 25 pixels (base), 40 with synergy
   - **Visual Effect**: Multi-ring explosion (Red/Orange/Yellow)
   - **Area Damage**: 2 damage to all enemies in radius
@@ -148,7 +148,7 @@ Complete reference for all ship parts, their effects, costs, and synergy combina
 - **Energy Cost**: +5
 - **Effect**: **Double Parts Per Upgrade** - allows picking 2 parts per round instead of 1
 - **Note**: Intentionally overpowered for power fantasy gameplay
-- **Rarity**: 5% (Very Rare)
+- **Rarity**: 15% (Rare) - increased from 5%
 
 ### **Relay** 📡
 - **Color**: White (12)
@@ -248,8 +248,8 @@ Complete reference for all ship parts, their effects, costs, and synergy combina
 ### **Rarity Tiers**
 - **Common (80%)**: Armor, Engine, Generator, Shooter
 - **Uncommon (20-40%)**: Laser (25%), Dodge (25%), Shield (20%), Magnet (40%)
-- **Rare (8-15%)**: Homing (15%), Relay (15%), Conduit (10%), Repulsor (10%), Catalyst (8%)
-- **Very Rare (3-5%)**: Explosive (10%), Hardpoint (5%), Core (5%), Targeting (3%)
+- **Rare (8-15%)**: Homing (15%), Hardpoint (15%), Relay (15%), Conduit (10%), Repulsor (10%), Catalyst (8%)
+- **Very Rare (3-10%)**: Explosive (10%), Core (5%), Targeting (3%)
 
 ### **Scrap Bonus System**
 - **Eligibility**: Parts with ≤30% base rarity get scrap bonuses
@@ -286,7 +286,7 @@ Complete reference for all ship parts, their effects, costs, and synergy combina
 - Multiple repulsors now stack effectively
 
 #### **Explosive Enhancements**
-- Auto-detonation after 2 seconds
+- Auto-detonation after 1 second (reduced from 2s)
 - Visual explosion effects show damage radius
 - Pulsing bullet appearance
 - No more wasted shots
@@ -339,4 +339,4 @@ Complete reference for all ship parts, their effects, costs, and synergy combina
 - Dodge parts for invincibility frames
 - High mobility survival strategy
 
-*Last Updated: Latest balance patch with explosive auto-detonation and repulsor buffs*
+*Last Updated: Latest balance patch with hardpoint availability buff (5% → 15%) and explosive timing improvement (2s → 1s)*
