@@ -31,8 +31,8 @@ local pixel_types = {
         can_shoot = false,
         shoot_interval = 0,
         is_core = false,
-        energy_cost = 2,
-        special_effect = nil,
+        energy_cost = 1, -- Cheaper!
+        special_effect = "movement_speed", -- Boost movement speed
         rarity = 80, -- 80% base chance
         name = "Engine"
     },
@@ -58,16 +58,16 @@ local pixel_types = {
         rarity = 25, -- 25% base chance
         name = "Laser"
     },
-    reflector = {
+    dodge = {
         color = 1,       -- Purple
         health = 1,
         can_shoot = false,
         shoot_interval = 0,
         is_core = false,
-        energy_cost = 2,
-        special_effect = nil,
+        energy_cost = 3,
+        special_effect = "dodge", -- Provides directional dodge with iframes
         rarity = 25, -- 25% base chance
-        name = "Reflector"
+        name = "Dodge"
     },
     generator = {
         color = 4,       -- Yellow
@@ -88,18 +88,18 @@ local pixel_types = {
         is_core = false,
         energy_cost = 5,
         special_effect = "double_pick", -- Allows picking 2 parts per round
-        rarity = 5, -- 5% base chance
+        rarity = 15, -- 15% base chance (increased from 5%)
         name = "Hardpoint"
     },
     repulsor = {
         color = 11,      -- Cyan
         health = 1,
         can_shoot = false,
-        shoot_interval = 180, -- 3 seconds at 60fps for pulse timing
+        shoot_interval = 120, -- 2 seconds at 60fps for pulse timing (faster!)
         is_core = false,
-        energy_cost = 6,
-        special_effect = "repulse", -- Pushes enemies away every 3 seconds
-        rarity = 5, -- 5% base chance
+        energy_cost = 4, -- Reduced from 6 to 4
+        special_effect = "repulse", -- Pushes enemies away every 2 seconds
+        rarity = 10, -- Increased from 5% to 10% (more common)
         name = "Repulsor"
     },
     homing = {
@@ -141,10 +141,65 @@ local pixel_types = {
         can_shoot = false,
         shoot_interval = 0,
         is_core = true,  -- Critical part - game over if all cores destroyed
-        energy_cost = 8, -- Expensive to balance its power
+        energy_cost = 0, -- Free - rarity is the limiting factor
         special_effect = nil,
         rarity = 5,      -- Very rare - 5% base chance
         name = "Core"
+    },
+    magnet = {
+        color = 6,       -- Green
+        health = 1,
+        can_shoot = false,
+        shoot_interval = 0,
+        is_core = false,
+        energy_cost = 2,
+        special_effect = "magnet", -- Attracts scrap from farther away
+        rarity = 40,     -- 40% base chance
+        name = "Magnet"
+    },
+    relay = {
+        color = 12,      -- White
+        health = 1,
+        can_shoot = false,
+        shoot_interval = 0,
+        is_core = false,
+        energy_cost = 4,
+        special_effect = "relay", -- Amplifies adjacent special parts
+        rarity = 15,     -- 15% base chance
+        name = "Relay"
+    },
+    conduit = {
+        color = 7,       -- Dark Green
+        health = 1,
+        can_shoot = false,
+        shoot_interval = 0,
+        is_core = false,
+        energy_cost = 3,
+        special_effect = "conduit", -- Allows synergies across gaps
+        rarity = 10,     -- 10% base chance
+        name = "Conduit"
+    },
+    catalyst = {
+        color = 8,       -- Dark Blue
+        health = 1,
+        can_shoot = false,
+        shoot_interval = 0,
+        is_core = false,
+        energy_cost = 5,
+        special_effect = "catalyst", -- Reduces synergy requirements
+        rarity = 8,      -- 8% base chance
+        name = "Catalyst"
+    },
+    targeting = {
+        color = 15,      -- Dark Grey
+        health = 1,
+        can_shoot = false,
+        shoot_interval = 0,
+        is_core = false,
+        energy_cost = 6,
+        special_effect = "targeting", -- Makes all projectiles homing
+        rarity = 3,      -- 3% base chance - very rare
+        name = "Targeting"
     }
 }
 
@@ -197,6 +252,14 @@ local enemy_types = {
     }
 }
 
+-- Display constants
+local GAME_SHIP_SCALE = 0.5 -- Ship scale during gameplay (3x3 pixels per part)
+-- TODO: Consider dynamic scaling based on ship size or game state
+
+-- Grid constants
+local GRID_WIDTH = 64  -- Grid width in cells
+local GRID_HEIGHT = 64 -- Grid height in cells
+
 -- Game state
 local game = {
     state = "menu",     -- menu, building, playing, upgrading, gameover
@@ -216,7 +279,7 @@ local game = {
 
 -- Player ship
 local player = {
-    x = 50,
+    x = 30, -- Moved further left to utilize extra space from scaling
     y = 60,
     pixels = {},
     last_shoot_times = {},
@@ -225,13 +288,16 @@ local player = {
     energy_bonus = 0,    -- Additional energy from upgrades
     scrap_collected = 0, -- Scrap for increasing part rarity
     immunity_time = 0,   -- Frames of damage immunity remaining
-    speed_burst_time = 0 -- Frames of speed burst remaining
+    speed_burst_time = 0, -- Frames of speed burst remaining
+    dodge_time = 0,      -- Frames of active dodge remaining
+    dodge_iframes = 0    -- Frames of dodge invincibility remaining
 }
 
 -- Game objects
 local bullets = {}
 local enemies = {}
 local scrap_drops = {}
+local explosions = {} -- Visual explosion effects
 local upgrade_options = {}
 
 -- Building interface
@@ -242,14 +308,17 @@ local building = {
     drag_source_index = 0,
     mouse_grid_x = 0,
     mouse_grid_y = 0,
-    ship_area = {x = 20, y = 20, w = 120, h = 96},
-    palette_area = {x = 160, y = 20, w = 60, h = 96},
-    available_parts = {"engine", "armor", "shooter", "laser", "reflector", "generator", "hardpoint", "repulsor"},
+    ship_area = {x = 10, y = 10, w = 150, h = 120}, -- Larger ship area
+    palette_area = {x = 170, y = 10, w = 60, h = 120}, -- Adjusted palette position
+    available_parts = {"engine", "armor", "shooter", "laser", "dodge", "generator", "hardpoint", "repulsor", "magnet", "relay", "conduit", "catalyst", "targeting"},
     upgrade_mode = false,
     parts_added = 0,
     max_parts_to_add = 1,
     undo_state = nil, -- Backup of ship state before changes
-    is_initial = false
+    is_initial = false,
+    zoom_level = 1.0, -- Zoom factor for building grid (1.0 = normal, 1.5 = 150%, etc.)
+    grid_offset_x = 0, -- Pan offset for zoomed view
+    grid_offset_y = 0
 }
 
 -- Initialize starting ship configuration
@@ -264,18 +333,18 @@ function init_ship()
     init_synergies()
 
     player.pixels = {
-        -- Starting 3x3 configuration with generator:
-        -- Total cost: 5*armor(1) + core(8) + generator(-3) + shooter(3) = 11 energy
+        -- Starting 3x3 configuration with generator (centered in 64x64 grid):
+        -- Total cost: 5*armor(1) + core(0) + generator(-3) + shooter(3) = 3 energy
         -- a a
         -- c g s
         -- a a
-        {x=5, y=4, type="armor", health=pixel_types.armor.health},
-        {x=6, y=4, type="armor", health=pixel_types.armor.health},
-        {x=5, y=5, type="core", health=pixel_types.core.health},
-        {x=6, y=5, type="generator", health=pixel_types.generator.health},
-        {x=7, y=5, type="shooter", health=pixel_types.shooter.health},
-        {x=5, y=6, type="armor", health=pixel_types.armor.health},
-        {x=6, y=6, type="armor", health=pixel_types.armor.health}
+        {x=30, y=30, type="armor", health=pixel_types.armor.health},
+        {x=31, y=30, type="armor", health=pixel_types.armor.health},
+        {x=30, y=31, type="core", health=pixel_types.core.health},
+        {x=31, y=31, type="generator", health=pixel_types.generator.health},
+        {x=32, y=31, type="shooter", health=pixel_types.shooter.health},
+        {x=30, y=32, type="armor", health=pixel_types.armor.health},
+        {x=31, y=32, type="armor", health=pixel_types.armor.health}
     }
 
     -- Initialize shoot timers for all parts
@@ -344,18 +413,61 @@ function update_game()
         end
     end
 
+    -- Check for dodge activation (B button)
+    if btnp(5) then -- B button
+        -- Find the first available dodge part (not on cooldown)
+        local available_dodge = nil
+        for _, pixel in ipairs(player.pixels) do
+            if pixel.health > 0 and pixel.type == "dodge" and (pixel.dodge_cooldown or 0) <= 0 then
+                available_dodge = pixel
+                break
+            end
+        end
+
+        if available_dodge then
+            -- Determine dodge direction based on held movement buttons
+            local dodge_direction = {x = 0, y = 0}
+            if btn(0) then dodge_direction.y = -1 end -- Up
+            if btn(1) then dodge_direction.y = 1 end  -- Down
+            if btn(2) then dodge_direction.x = -1 end -- Left
+            if btn(3) then dodge_direction.x = 1 end  -- Right
+
+            -- If no direction held, dodge backwards (left)
+            if dodge_direction.x == 0 and dodge_direction.y == 0 then
+                dodge_direction.x = -1
+            end
+
+            -- Perform dodge
+            local dodge_distance = 35 -- Fixed distance per dodge
+            player.x = player.x + dodge_direction.x * dodge_distance
+            player.y = player.y + dodge_direction.y * dodge_distance
+
+            -- Keep player in bounds after dodge
+            player.x = math.max(-20, math.min(200, player.x))
+            player.y = math.max(-12, math.min(124, player.y))
+
+            -- Set dodge state
+            player.dodge_time = 15 -- 0.25 seconds of enhanced movement
+            player.dodge_iframes = 30 -- 0.5 seconds of invincibility
+
+            -- Put this specific dodge part on cooldown
+            available_dodge.dodge_cooldown = 120 -- 2 seconds cooldown per part
+        end
+    end
+
     -- Apply speed burst multiplier
     if player.speed_burst_time > 0 then
         movement_speed = movement_speed * 2.5 -- 2.5x speed during burst
     end
 
-    -- Player movement (allow ship to reach screen edges)
-    -- Top parts are at grid y=4, so player.y + 4*6 = player.y + 24
-    -- To reach screen top (y=0), player.y needs to be -24
-    if btn(0) and player.y > -24 then player.y = player.y - movement_speed end
-    if btn(1) and player.y < 120 then player.y = player.y + movement_speed end
-    if btn(2) and player.x > -30 then player.x = player.x - movement_speed end -- Allow some left overhang
-    if btn(3) and player.x < 180 then player.x = player.x + movement_speed end
+    -- Player movement (allow ship to reach screen edges with scaled size)
+    -- With 0.5 scale, parts are 3 pixels. Top parts at grid y=4 = 12 pixels
+    -- To reach screen top (y=0), player.y needs to be -12
+    local scaled_bound = 12 -- 4 * 6 * 0.5
+    if btn(0) and player.y > -scaled_bound then player.y = player.y - movement_speed end
+    if btn(1) and player.y < 124 then player.y = player.y + movement_speed end -- 136 - 12
+    if btn(2) and player.x > -20 then player.x = player.x - movement_speed end -- Adjusted for smaller ship
+    if btn(3) and player.x < 200 then player.x = player.x + movement_speed end -- Even more movement room
 
     -- Shooting
     update_shooting()
@@ -365,6 +477,9 @@ function update_game()
 
     -- Update bullets
     update_bullets()
+
+    -- Update explosions
+    update_explosions()
 
     -- Update enemies
     update_enemies()
@@ -382,6 +497,18 @@ function update_game()
     if player.speed_burst_time > 0 then
         player.speed_burst_time = player.speed_burst_time - 1
     end
+    -- Update individual dodge part cooldowns
+    for _, pixel in ipairs(player.pixels) do
+        if pixel.type == "dodge" and pixel.dodge_cooldown and pixel.dodge_cooldown > 0 then
+            pixel.dodge_cooldown = pixel.dodge_cooldown - 1
+        end
+    end
+    if player.dodge_time > 0 then
+        player.dodge_time = player.dodge_time - 1
+    end
+    if player.dodge_iframes > 0 then
+        player.dodge_iframes = player.dodge_iframes - 1
+    end
 
     -- Update synergies periodically (every 30 frames for performance)
     if game.timer % 30 == 0 then
@@ -396,8 +523,15 @@ function update_game()
         start_upgrade_phase()
     end
 
-    -- Check lose condition
-    if not has_core_part() then
+    -- Check lose condition - game over only when no living parts remain
+    local living_parts = 0
+    for _, pixel in ipairs(player.pixels) do
+        if pixel.health > 0 then
+            living_parts = living_parts + 1
+        end
+    end
+
+    if living_parts == 0 then
         game.state = "gameover"
     end
 end
@@ -410,27 +544,41 @@ function update_shooting()
                 -- Check for synergy effects affecting this part
                 local synergy_effects = get_part_synergy_effects(pixel.x, pixel.y, pixel.type)
 
-                -- Create bullet at part position
-                local bullet_x = player.x + pixel.x * 6 + 6
-                local bullet_y = player.y + pixel.y * 6 + 3
+                -- Create bullet at part position (match scaled ship)
+                local part_size = 6 * GAME_SHIP_SCALE
+                local ship_draw_x, ship_draw_y = get_ship_fighting_position()
+                local bullet_x = ship_draw_x + pixel.x * part_size + part_size
+                local bullet_y = ship_draw_y + pixel.y * part_size + part_size / 2
+
+                -- Check for targeting parts to make bullets homing
+                local targeting_count = count_parts_of_type("targeting")
 
                 if synergy_effects.spread_shot then
                     -- Triple shot synergy - fire 3 bullets in a spread
                     local angles = {-synergy_effects.spread_angle, 0, synergy_effects.spread_angle}
                     for _, angle in ipairs(angles) do
                         local rad = math.rad(angle)
-                        table.insert(bullets, {
+                        local bullet = {
                             x = bullet_x,
                             y = bullet_y,
                             speed = 3,
                             type = pixel.type,
                             angle = rad,
                             synergy = "spread_shot"
-                        })
+                        }
+
+                        -- Apply targeting if available
+                        if targeting_count > 0 then
+                            bullet.homing = true
+                            bullet.target = nil
+                            bullet.lifetime = 360
+                        end
+
+                        table.insert(bullets, bullet)
                     end
                 elseif synergy_effects.piercing_shot then
                     -- Laser focus synergy - piercing bullet
-                    table.insert(bullets, {
+                    local bullet = {
                         x = bullet_x,
                         y = bullet_y,
                         speed = 4,
@@ -438,7 +586,16 @@ function update_shooting()
                         piercing = true,
                         damage_multiplier = synergy_effects.damage_multiplier or 1,
                         synergy = "piercing_shot"
-                    })
+                    }
+
+                    -- Apply targeting if available
+                    if targeting_count > 0 then
+                        bullet.homing = true
+                        bullet.target = nil
+                        bullet.lifetime = 360
+                    end
+
+                    table.insert(bullets, bullet)
                 elseif synergy_effects.cross_fire then
                     -- Cross synergy - fire in 4 directions
                     local cross_directions = {
@@ -450,7 +607,7 @@ function update_shooting()
 
                     for _, dir in ipairs(cross_directions) do
                         local rad = math.rad(dir.angle)
-                        table.insert(bullets, {
+                        local bullet = {
                             x = bullet_x,
                             y = bullet_y,
                             speed = synergy_effects.bullet_speed or 3,
@@ -458,7 +615,16 @@ function update_shooting()
                             angle = rad,
                             synergy = "cross_fire",
                             direction = dir.name
-                        })
+                        }
+
+                        -- Apply targeting if available
+                        if targeting_count > 0 then
+                            bullet.homing = true
+                            bullet.target = nil
+                            bullet.lifetime = 360
+                        end
+
+                        table.insert(bullets, bullet)
                     end
                 elseif pixel.type == "homing" then
                     -- Homing missile(s)
@@ -491,28 +657,53 @@ function update_shooting()
                         explosion_radius = synergy_effects.explosion_radius or 40
                     end
 
-                    table.insert(bullets, {
+                    local bullet = {
                         x = bullet_x,
                         y = bullet_y,
                         speed = 2.5,
                         type = pixel.type,
                         explosive = true,
-                        explosion_radius = explosion_radius
-                    })
+                        explosion_radius = explosion_radius,
+                        explosive_timer = 60 -- 1 second at 60fps
+                    }
+
+                    -- Apply targeting if available (homing explosive bullets!)
+                    if targeting_count > 0 then
+                        bullet.homing = true
+                        bullet.target = nil
+                        bullet.lifetime = 360
+                    end
+
+                    table.insert(bullets, bullet)
                 else
-                    -- Normal bullet
-                    table.insert(bullets, {
-                        x = bullet_x,
-                        y = bullet_y,
-                        speed = 3,
-                        type = pixel.type
-                    })
+                    -- Normal bullets
+                    if targeting_count > 0 then
+                        -- Normal bullet becomes homing
+                        table.insert(bullets, {
+                            x = bullet_x,
+                            y = bullet_y,
+                            speed = 3,
+                            type = pixel.type,
+                            homing = true,
+                            target = nil, -- Will be assigned when updating
+                            lifetime = 360 -- 6 seconds max (longer than normal homing)
+                        })
+                    else
+                        -- Normal bullet
+                        table.insert(bullets, {
+                            x = bullet_x,
+                            y = bullet_y,
+                            speed = 3,
+                            type = pixel.type
+                        })
+                    end
                 end
 
                 player.last_shoot_times[i] = game.timer
             elseif pixel_def.special_effect == "repulse" and game.timer - player.last_shoot_times[i] >= pixel_def.shoot_interval then
                 -- Repulsor pulse effect
-                repulsor_pulse(player.x + pixel.x * 6 + 3, player.y + pixel.y * 6 + 3)
+                local ship_draw_x, ship_draw_y = get_ship_fighting_position()
+                repulsor_pulse(ship_draw_x + pixel.x * 6 + 3, ship_draw_y + pixel.y * 6 + 3)
                 player.last_shoot_times[i] = game.timer
             end
         end
@@ -628,9 +819,35 @@ function update_bullets()
             bullet.x = bullet.x + bullet.speed
         end
 
+        -- Handle explosive timer countdown
+        if bullet.explosive and bullet.explosive_timer then
+            bullet.explosive_timer = bullet.explosive_timer - 1
+            if bullet.explosive_timer <= 0 then
+                -- Auto-detonate explosive bullet
+                create_explosion(bullet.x, bullet.y, bullet.explosion_radius)
+                table.remove(bullets, i)
+                goto continue -- Skip the rest of the bullet processing
+            end
+        end
+
         -- Remove bullets that go off screen (except homing missiles)
         if not bullet.homing and (bullet.x > 250 or bullet.x < -10 or bullet.y > 150 or bullet.y < -10) then
             table.remove(bullets, i)
+        end
+
+        ::continue::
+    end
+end
+
+function update_explosions()
+    for i = #explosions, 1, -1 do
+        local explosion = explosions[i]
+
+        explosion.lifetime = explosion.lifetime - 1
+
+        -- Remove expired explosions
+        if explosion.lifetime <= 0 then
+            table.remove(explosions, i)
         end
     end
 end
@@ -653,25 +870,21 @@ function update_enemies()
             enemy.y = enemy.y + enemy.zigzag_direction * 1.5
         elseif enemy_def.movement == "homing" then
             -- Move toward player ship center
-            local ship_bounds = get_ship_bounds()
-            if ship_bounds.min_x ~= math.huge then
-                local ship_center_x = player.x + (ship_bounds.min_x + ship_bounds.max_x) * 3
-                local ship_center_y = player.y + (ship_bounds.min_y + ship_bounds.max_y) * 3
+            local ship_center_x, ship_center_y = get_ship_center_fighting()
 
-                local dx = ship_center_x - enemy.x
-                local dy = ship_center_y - enemy.y
-                local dist = math.sqrt(dx*dx + dy*dy)
+            local dx = ship_center_x - enemy.x
+            local dy = ship_center_y - enemy.y
+            local dist = math.sqrt(dx*dx + dy*dy)
 
-                if dist > 0 then
-                    enemy.x = enemy.x + (dx / dist) * enemy.speed * 0.7 -- Slower homing
-                    enemy.y = enemy.y + (dy / dist) * enemy.speed * 0.7
-                end
-
-                -- Still move left slowly
-                enemy.x = enemy.x - enemy.speed * 0.3
-            else
-                enemy.x = enemy.x - enemy.speed
+            if dist > 0 then
+                enemy.x = enemy.x + (dx / dist) * enemy.speed * 0.7 -- Slower homing
+                enemy.y = enemy.y + (dy / dist) * enemy.speed * 0.7
             end
+
+            -- Still move left slowly
+            enemy.x = enemy.x - enemy.speed * 0.3
+        else
+            enemy.x = enemy.x - enemy.speed
         end
 
         -- Keep enemies in bounds
@@ -696,20 +909,29 @@ function update_scrap_drops()
             table.remove(scrap_drops, i)
         else
             -- Check for collection by player ship
-            local ship_bounds = get_ship_bounds()
-            if ship_bounds.min_x ~= math.huge then
-                local ship_center_x = player.x + (ship_bounds.min_x + ship_bounds.max_x) * 3
-                local ship_center_y = player.y + (ship_bounds.min_y + ship_bounds.max_y) * 3
+            local ship_center_x, ship_center_y = get_ship_center_fighting()
 
-                local dx = scrap.x - ship_center_x
-                local dy = scrap.y - ship_center_y
-                local distance = math.sqrt(dx * dx + dy * dy)
+            local dx = scrap.x - ship_center_x
+            local dy = scrap.y - ship_center_y
+            local distance = math.sqrt(dx * dx + dy * dy)
 
-                -- Collection radius of 20 pixels
-                if distance < 20 then
-                    player.scrap_collected = player.scrap_collected + 1
-                    table.remove(scrap_drops, i)
-                end
+            -- Calculate collection radius with magnet boost
+            local magnet_count = count_parts_of_type("magnet")
+            local collection_radius = 20 + (magnet_count * 15) -- Base 20 + 15 per magnet
+
+            -- Magnet attraction force
+            if magnet_count > 0 and distance < collection_radius * 2 and distance > collection_radius then
+                local pull_force = 2 + magnet_count -- Stronger pull with more magnets
+                local pull_x = -(dx / distance) * pull_force
+                local pull_y = -(dy / distance) * pull_force
+                scrap.x = scrap.x + pull_x
+                scrap.y = scrap.y + pull_y
+            end
+
+            -- Collection
+            if distance < collection_radius then
+                player.scrap_collected = player.scrap_collected + 1
+                table.remove(scrap_drops, i)
             end
         end
     end
@@ -771,29 +993,35 @@ function update_collisions()
         for j = #player.pixels, 1, -1 do
             local pixel = player.pixels[j]
             if pixel.health > 0 then
-                local px = player.x + pixel.x * 6
-                local py = player.y + pixel.y * 6
-                if enemy.x < px + 6 and enemy.x + 8 > px and
-                   enemy.y < py + 6 and enemy.y + 8 > py then
+                local part_size = 6 * GAME_SHIP_SCALE -- Match visual scale
+                local ship_draw_x, ship_draw_y = get_ship_fighting_position()
+                local px = ship_draw_x + pixel.x * part_size
+                local py = ship_draw_y + pixel.y * part_size
+                if enemy.x < px + part_size and enemy.x + 8 > px and
+                   enemy.y < py + part_size and enemy.y + 8 > py then
                     -- Ship hit!
-                    if player.immunity_time <= 0 then
+                    if player.immunity_time <= 0 and player.dodge_iframes <= 0 then
                         pixel.health = pixel.health - 1
 
-                        -- Check for core destruction - immediate game over
+                        -- Check for core destruction - use as extra life
                         if pixel.health <= 0 and pixel_types[pixel.type].is_core then
-                            -- Count remaining cores (excluding this one)
-                            local remaining_cores = 0
-                            for _, other_pixel in ipairs(player.pixels) do
-                                if other_pixel ~= pixel and other_pixel.health > 0 and pixel_types[other_pixel.type].is_core then
-                                    remaining_cores = remaining_cores + 1
+                            -- Core acts as extra life - restore all ship parts when core is destroyed
+                            trace("Core destroyed! Using as extra life...")
+
+                            -- Restore all damaged parts to full health
+                            for _, restore_pixel in ipairs(player.pixels) do
+                                if restore_pixel.health <= 0 then
+                                    restore_pixel.health = pixel_types[restore_pixel.type].health
                                 end
                             end
 
-                            -- Game over if no cores remain
-                            if remaining_cores == 0 then
-                                game.state = "gameover"
-                                return
-                            end
+                            -- Grant temporary immunity
+                            player.immunity_time = 180 -- 3 seconds of immunity
+
+                            -- Don't restore the core itself - it's consumed as the extra life
+                            pixel.health = 0
+
+                            return -- Skip normal damage processing
                         end
 
                         -- Check for shield synergy - activate immunity on damage
@@ -820,12 +1048,40 @@ function draw_game()
         pix(star_x, star_y, 12) -- White stars
     end
 
-    -- Draw player ship
-    draw_ship(player.x, player.y, player.pixels)
+    -- Draw player ship (scaled down for better visibility)
+    local ship_draw_x, ship_draw_y = get_ship_fighting_position()
+    draw_ship(ship_draw_x, ship_draw_y, player.pixels, GAME_SHIP_SCALE)
 
     -- Draw bullets
     for _, bullet in ipairs(bullets) do
-        rect(bullet.x, bullet.y, 2, 1, 4) -- Yellow bullets
+        if bullet.explosive then
+            -- Draw explosive bullets differently - pulsing orange
+            local pulse = math.sin(game.timer * 0.3) * 0.5 + 0.5
+            local color = pulse > 0.5 and 3 or 2 -- Orange/Red pulsing
+            rect(bullet.x, bullet.y, 3, 2, color) -- Slightly bigger
+        else
+            rect(bullet.x, bullet.y, 2, 1, 4) -- Yellow bullets
+        end
+    end
+
+    -- Draw explosions
+    for _, explosion in ipairs(explosions) do
+        local life_ratio = explosion.lifetime / explosion.max_lifetime
+
+        -- Expanding circle effect
+        local current_radius = explosion.max_radius * (1 - life_ratio * 0.5) -- Start big, shrink slightly
+
+        -- Multiple circles for effect
+        local colors = {2, 3, 4} -- Red, Orange, Yellow
+        for i, color in ipairs(colors) do
+            local offset_radius = current_radius - (i - 1) * 3
+            if offset_radius > 0 then
+                local alpha = life_ratio * 255 -- Fade out over time
+                if alpha > 50 then -- Only draw if visible enough
+                    circb(explosion.x, explosion.y, offset_radius, color)
+                end
+            end
+        end
     end
 
     -- Draw enemies
@@ -849,15 +1105,11 @@ function draw_game()
         rect(scrap.x - 2, scrap.y - 2, 4, 4, color)
 
         -- Draw collection range hint when close
-        local ship_bounds = get_ship_bounds()
-        if ship_bounds.min_x ~= math.huge then
-            local ship_center_x = player.x + (ship_bounds.min_x + ship_bounds.max_x) * 3
-            local ship_center_y = player.y + (ship_bounds.min_y + ship_bounds.max_y) * 3
-            local distance = math.sqrt((scrap.x - ship_center_x)^2 + (scrap.y - ship_center_y)^2)
+        local ship_center_x, ship_center_y = get_ship_center_fighting()
+        local distance = math.sqrt((scrap.x - ship_center_x)^2 + (scrap.y - ship_center_y)^2)
 
-            if distance < 30 then
-                circb(scrap.x, scrap.y, 20, 4) -- Yellow collection radius
-            end
+        if distance < 30 then
+            circb(scrap.x, scrap.y, 20, 4) -- Yellow collection radius
         end
     end
 
@@ -887,12 +1139,19 @@ function save_ship_state()
     -- Deep copy the current ship state
     building.undo_state = {}
     for i, pixel in ipairs(player.pixels) do
-        building.undo_state[i] = {
+        local saved_pixel = {
             x = pixel.x,
             y = pixel.y,
             type = pixel.type,
             health = pixel.health
         }
+
+        -- Save dodge cooldown for dodge parts
+        if pixel.type == "dodge" then
+            saved_pixel.dodge_cooldown = pixel.dodge_cooldown or 0
+        end
+
+        building.undo_state[i] = saved_pixel
     end
 end
 
@@ -901,12 +1160,19 @@ function restore_ship_state()
         -- Restore the saved state
         player.pixels = {}
         for i, pixel in ipairs(building.undo_state) do
-            player.pixels[i] = {
+            local restored_pixel = {
                 x = pixel.x,
                 y = pixel.y,
                 type = pixel.type,
                 health = pixel.health
             }
+
+            -- Restore dodge cooldown for dodge parts
+            if pixel.type == "dodge" then
+                restored_pixel.dodge_cooldown = pixel.dodge_cooldown or 0
+            end
+
+            player.pixels[i] = restored_pixel
         end
 
         -- Reset building state
@@ -967,7 +1233,7 @@ function start_initial_upgrade()
 
     -- For initial upgrade, offer 5 basic part types
     upgrade_options = {}
-    local initial_types = {"armor", "shooter", "generator", "laser", "hardpoint"}
+    local initial_types = {"armor", "shooter", "generator", "laser", "dodge"}
 
     for i = 1, 5 do
         table.insert(upgrade_options, {
@@ -981,7 +1247,7 @@ function start_initial_upgrade()
     building.drag_pixel = nil
     building.upgrade_mode = true
     building.parts_added = 0
-    building.max_parts_to_add = 1
+    building.max_parts_to_add = 6
     building.available_parts = {}
     for i = 1, 5 do
         building.available_parts[i] = upgrade_options[i].type
@@ -998,48 +1264,96 @@ function update_upgrading()
         return
     end
 
-    -- Convert mouse to grid coordinates in ship area
+    -- Handle zoom controls (X and Y buttons) with cursor-centered zoom
+    local mouse_x, mouse_y = mouse()
+    local zoom_changed = false
+    local old_zoom = building.zoom_level
+
+    if btnp(6) then -- X button - zoom out
+        building.zoom_level = math.max(building.zoom_level / 1.2, 0.5) -- Min 0.5x zoom out
+        zoom_changed = true
+    elseif btnp(7) then -- Y button - zoom in
+        building.zoom_level = math.min(building.zoom_level * 1.2, 3.0) -- Max 3x zoom in
+        zoom_changed = true
+    end
+
+    -- Adjust grid offset to keep cursor position stable during zoom
+    if zoom_changed and mouse_x >= building.ship_area.x and mouse_x < building.ship_area.x + building.ship_area.w and
+       mouse_y >= building.ship_area.y and mouse_y < building.ship_area.y + building.ship_area.h then
+
+        local old_cell_size = 8 * old_zoom
+        local new_cell_size = 8 * building.zoom_level
+
+        -- Get grid positions with old and new cell sizes
+        local old_grid_start_x, old_grid_start_y = get_centered_grid_start(old_cell_size)
+
+        -- Calculate world coordinates under cursor before zoom
+        local cursor_world_x = (mouse_x - old_grid_start_x) / old_cell_size
+        local cursor_world_y = (mouse_y - old_grid_start_y) / old_cell_size
+
+        -- Calculate where those coordinates should be after zoom
+        local new_grid_start_x, new_grid_start_y = get_centered_grid_start(new_cell_size)
+        local new_cursor_screen_x = new_grid_start_x + cursor_world_x * new_cell_size
+        local new_cursor_screen_y = new_grid_start_y + cursor_world_y * new_cell_size
+
+        -- Adjust offset to keep cursor over same world coordinates
+        building.grid_offset_x = building.grid_offset_x + (new_cursor_screen_x - mouse_x)
+        building.grid_offset_y = building.grid_offset_y + (new_cursor_screen_y - mouse_y)
+    end
+
+    -- Handle panning with arrow keys
+    local pan_speed = 5 -- pixels per frame
+    if btn(0) then building.grid_offset_y = building.grid_offset_y - pan_speed end -- Up
+    if btn(1) then building.grid_offset_y = building.grid_offset_y + pan_speed end -- Down
+    if btn(2) then building.grid_offset_x = building.grid_offset_x - pan_speed end -- Left
+    if btn(3) then building.grid_offset_x = building.grid_offset_x + pan_speed end -- Right
+
+    -- Convert mouse to grid coordinates in ship area (with zoom)
     if mx >= building.ship_area.x and mx < building.ship_area.x + building.ship_area.w and
        my >= building.ship_area.y and my < building.ship_area.y + building.ship_area.h then
-        building.mouse_grid_x = math.floor((mx - building.ship_area.x - 4) / 8)
-        building.mouse_grid_y = math.floor((my - building.ship_area.y - 4) / 8)
+        local cell_size = 8 * building.zoom_level
+        local grid_start_x, grid_start_y = get_centered_grid_start(cell_size)
+        building.mouse_grid_x = math.floor((mx - grid_start_x) / cell_size)
+        building.mouse_grid_y = math.floor((my - grid_start_y) / cell_size)
     else
         building.mouse_grid_x = -1
         building.mouse_grid_y = -1
     end
 
-    -- Only allow interaction if we haven't reached the part limit
-    if building.parts_added < building.max_parts_to_add then
-        -- Handle mouse clicks and dragging
-        if left and not building.dragging then
-            -- Start dragging from palette
-            if mx >= building.palette_area.x and mx < building.palette_area.x + building.palette_area.w and
-               my >= building.palette_area.y and my < building.palette_area.y + building.palette_area.h then
-                local palette_index = math.floor((my - building.palette_area.y - 10) / 15) + 1
-                if palette_index >= 1 and palette_index <= #building.available_parts then
-                    building.dragging = true
-                    building.drag_pixel = building.available_parts[palette_index]
-                    building.drag_source = "palette"
-                    building.drag_source_index = palette_index
+    -- Handle mouse clicks and dragging (interaction always allowed with refreshing parts)
+    if left and not building.dragging then
+        -- Start dragging from palette
+        if mx >= building.palette_area.x and mx < building.palette_area.x + building.palette_area.w and
+           my >= building.palette_area.y and my < building.palette_area.y + building.palette_area.h then
+            local palette_index = math.floor((my - building.palette_area.y - 10) / 15) + 1
+            if palette_index >= 1 and palette_index <= #building.available_parts then
+                building.dragging = true
+                building.drag_pixel = building.available_parts[palette_index]
+                building.drag_source = "palette"
+                building.drag_source_index = palette_index
+            end
+        end
+    end
+
+    -- Handle drop
+    if not left and building.dragging then
+        if building.mouse_grid_x >= 0 and building.mouse_grid_y >= 0 then
+            -- Valid drop zone
+            if can_place_part(building.mouse_grid_x, building.mouse_grid_y, building.drag_pixel) then
+                place_part(building.mouse_grid_x, building.mouse_grid_y, building.drag_pixel)
+                building.parts_added = building.parts_added + 1
+
+                -- Replace the used part with a new random one in upgrade mode
+                if building.upgrade_mode and building.drag_source == "palette" then
+                    building.available_parts[building.drag_source_index] = select_random_part()
                 end
             end
         end
 
-        -- Handle drop
-        if not left and building.dragging then
-            if building.mouse_grid_x >= 0 and building.mouse_grid_y >= 0 then
-                -- Valid drop zone
-                if can_place_part(building.mouse_grid_x, building.mouse_grid_y, building.drag_pixel) then
-                    place_part(building.mouse_grid_x, building.mouse_grid_y, building.drag_pixel)
-                    building.parts_added = building.parts_added + 1
-                end
-            end
-
-            building.dragging = false
-            building.drag_pixel = nil
-            building.drag_source = ""
-            building.drag_source_index = 0
-        end
+        building.dragging = false
+        building.drag_pixel = nil
+        building.drag_source = ""
+        building.drag_source_index = 0
     end
 
     -- Keyboard controls
@@ -1060,9 +1374,9 @@ function draw_upgrading()
 
     -- Title
     if building.is_initial then
-        print("CUSTOMIZE YOUR STARTING SHIP", 55, 5, 12, false, 1, true)
+        print("SHIP SETUP", 100, 5, 12, false, 1, true)
     else
-        print("CHOOSE ONE PART TO ADD", 65, 5, 12, false, 1, true)
+        print("UPGRADE", 105, 5, 12, false, 1, true)
     end
 
     -- Ship building area
@@ -1070,30 +1384,42 @@ function draw_upgrading()
     rectb(building.ship_area.x, building.ship_area.y, building.ship_area.w, building.ship_area.h, 12)
     print("SHIP", building.ship_area.x + 5, building.ship_area.y - 8, 12)
 
-    -- Draw grid in ship area
-    for gx = 0, 13 do
-        for gy = 0, 10 do
-            local px = building.ship_area.x + 4 + gx * 8
-            local py = building.ship_area.y + 4 + gy * 8
+    -- Draw grid in ship area (with zoom and clipping)
+    clip(building.ship_area.x, building.ship_area.y, building.ship_area.w, building.ship_area.h)
+    local cell_size = 8 * building.zoom_level  -- Remove floor for better alignment
+    local grid_start_x, grid_start_y = get_centered_grid_start(cell_size)
 
-            -- Highlight valid placement positions (only if we haven't added a part yet)
-            if building.parts_added == 0 and building.dragging and can_place_part(gx, gy, building.drag_pixel) then
-                rect(px, py, 8, 8, 3) -- Dark green for valid
-            elseif gx == building.mouse_grid_x and gy == building.mouse_grid_y then
-                rect(px, py, 8, 8, 2) -- Purple for hover
-            else
-                rectb(px, py, 8, 8, 0) -- Dark grid
+    for gx = 0, GRID_WIDTH - 1 do
+        for gy = 0, GRID_HEIGHT - 1 do
+            local px = grid_start_x + gx * cell_size
+            local py = grid_start_y + gy * cell_size
+
+            -- Only draw if visible in the clipped area
+            if px + cell_size >= building.ship_area.x and px < building.ship_area.x + building.ship_area.w and
+               py + cell_size >= building.ship_area.y and py < building.ship_area.y + building.ship_area.h then
+
+                -- Highlight valid placement positions (only if we haven't added a part yet)
+                if building.parts_added == 0 and building.dragging and can_place_part(gx, gy, building.drag_pixel) then
+                    rect(px, py, cell_size, cell_size, 3) -- Dark green for valid
+                elseif gx == building.mouse_grid_x and gy == building.mouse_grid_y then
+                    rect(px, py, cell_size, cell_size, 2) -- Purple for hover
+                else
+                    rectb(px, py, cell_size, cell_size, 0) -- Dark grid
+                end
             end
         end
     end
+    clip()
 
-    -- Draw ship parts
-    draw_ship_in_builder(building.ship_area.x + 4, building.ship_area.y + 4)
+    -- Draw ship parts (with zoom)
+    clip(building.ship_area.x, building.ship_area.y, building.ship_area.w, building.ship_area.h)
+    draw_ship_in_builder_zoomed(grid_start_x, grid_start_y, cell_size)
+    clip()
 
     -- Pixel palette area
     rect(building.palette_area.x, building.palette_area.y, building.palette_area.w, building.palette_area.h, 5)
     rectb(building.palette_area.x, building.palette_area.y, building.palette_area.w, building.palette_area.h, 12)
-    print("OPTIONS", building.palette_area.x + 5, building.palette_area.y - 8, 12)
+    print("PARTS", building.palette_area.x + 5, building.palette_area.y - 8, 12)
 
     -- Draw available upgrade options
     for i, pixel_type in ipairs(building.available_parts) do
@@ -1102,9 +1428,8 @@ function draw_upgrading()
         local pixel_def = pixel_types[pixel_type]
         local upgrade_option = upgrade_options[i]
 
-        -- Skip if currently dragging this part or if we've reached the limit
-        if not (building.dragging and building.drag_source == "palette" and building.drag_source_index == i) and
-           building.parts_added < building.max_parts_to_add then
+        -- Skip if currently dragging this part
+        if not (building.dragging and building.drag_source == "palette" and building.drag_source_index == i) then
             -- Check if we can afford this part
             local can_afford = has_sufficient_energy(pixel_type)
             local color = can_afford and pixel_def.color or 0
@@ -1133,36 +1458,46 @@ function draw_upgrading()
             -- Show energy cost
             local cost_text = pixel_def.energy_cost >= 0 and ("+" .. pixel_def.energy_cost) or tostring(pixel_def.energy_cost)
             print(cost_text, px + 12, py + 7, text_color, false, 1, true)
-        elseif building.parts_added >= building.max_parts_to_add then
-            -- Gray out options after reaching limit
-            rect(px, py, 8, 8, 0)
-            print(pixel_def.name, px + 12, py, 5, false, 1, true)
         end
+        -- Note: Removed greyout logic - parts now refresh when used
     end
 
     -- Draw dragged part following mouse
-    if building.dragging and building.parts_added < building.max_parts_to_add then
+    if building.dragging then
         local mx, my = mouse()
         local pixel_def = pixel_types[building.drag_pixel]
-        rect(mx - 4, my - 4, 8, 8, pixel_def.color)
+
+        -- Snap to grid when over ship area for better visual feedback
+        if mx >= building.ship_area.x and mx < building.ship_area.x + building.ship_area.w and
+           my >= building.ship_area.y and my < building.ship_area.y + building.ship_area.h and
+           building.mouse_grid_x >= 0 and building.mouse_grid_y >= 0 then
+            local cell_size = 8 * building.zoom_level
+            local grid_start_x = building.ship_area.x + 10 - building.grid_offset_x
+            local grid_start_y = building.ship_area.y + 10 - building.grid_offset_y
+            local snap_x = grid_start_x + building.mouse_grid_x * cell_size
+            local snap_y = grid_start_y + building.mouse_grid_y * cell_size
+            rect(snap_x, snap_y, cell_size, cell_size, pixel_def.color)
+        else
+            rect(mx - 4, my - 4, 8, 8, pixel_def.color)
+        end
     end
 
-    -- Energy status
+    -- Status bar
     local energy = get_energy_status()
     local energy_color = energy.at_limit and 2 or (energy.remaining <= 2 and 4 or 12)
-    print("Energy: " .. energy.used .. "/" .. energy.total, 10, 130, energy_color)
+    print(energy.used .. "/" .. energy.total .. "E", 10, 130, energy_color)
 
-    -- Instructions
+
+    -- Status and controls
     if building.parts_added < building.max_parts_to_add then
         local remaining = building.max_parts_to_add - building.parts_added
         if building.max_parts_to_add == 1 then
-            print("Drag one part from right to add to ship", 10, 120, 12)
+            print("Choose 1 part (parts refresh)", 10, 120, 12)
         else
-            print("Pick " .. remaining .. " more part" .. (remaining > 1 and "s" or "") .. " to add to ship", 10, 120, 12)
+            print("Choose " .. remaining .. " more (parts refresh)", 10, 120, 12)
         end
-        print("Right-click to undo changes", 10, 128, 8)
     else
-        print("Parts added! Press A or click to continue", 40, 120, 12)
+        print("Press A to continue", 10, 120, 12)
     end
 end
 
@@ -1176,11 +1511,57 @@ function update_building()
         return
     end
 
-    -- Convert mouse to grid coordinates in ship area
+    -- Handle zoom controls (X and Y buttons) with cursor-centered zoom
+    local mouse_x, mouse_y = mouse()
+    local zoom_changed = false
+    local old_zoom = building.zoom_level
+
+    if btnp(6) then -- X button - zoom out
+        building.zoom_level = math.max(building.zoom_level / 1.2, 0.5) -- Min 0.5x zoom out
+        zoom_changed = true
+    elseif btnp(7) then -- Y button - zoom in
+        building.zoom_level = math.min(building.zoom_level * 1.2, 3.0) -- Max 3x zoom in
+        zoom_changed = true
+    end
+
+    -- Adjust grid offset to keep cursor position stable during zoom
+    if zoom_changed and mouse_x >= building.ship_area.x and mouse_x < building.ship_area.x + building.ship_area.w and
+       mouse_y >= building.ship_area.y and mouse_y < building.ship_area.y + building.ship_area.h then
+
+        local old_cell_size = 8 * old_zoom
+        local new_cell_size = 8 * building.zoom_level
+
+        -- Get grid positions with old and new cell sizes
+        local old_grid_start_x, old_grid_start_y = get_centered_grid_start(old_cell_size)
+
+        -- Calculate world coordinates under cursor before zoom
+        local cursor_world_x = (mouse_x - old_grid_start_x) / old_cell_size
+        local cursor_world_y = (mouse_y - old_grid_start_y) / old_cell_size
+
+        -- Calculate where those coordinates should be after zoom
+        local new_grid_start_x, new_grid_start_y = get_centered_grid_start(new_cell_size)
+        local new_cursor_screen_x = new_grid_start_x + cursor_world_x * new_cell_size
+        local new_cursor_screen_y = new_grid_start_y + cursor_world_y * new_cell_size
+
+        -- Adjust offset to keep cursor over same world coordinates
+        building.grid_offset_x = building.grid_offset_x + (new_cursor_screen_x - mouse_x)
+        building.grid_offset_y = building.grid_offset_y + (new_cursor_screen_y - mouse_y)
+    end
+
+    -- Handle panning with arrow keys
+    local pan_speed = 5 -- pixels per frame
+    if btn(0) then building.grid_offset_y = building.grid_offset_y - pan_speed end -- Up
+    if btn(1) then building.grid_offset_y = building.grid_offset_y + pan_speed end -- Down
+    if btn(2) then building.grid_offset_x = building.grid_offset_x - pan_speed end -- Left
+    if btn(3) then building.grid_offset_x = building.grid_offset_x + pan_speed end -- Right
+
+    -- Convert mouse to grid coordinates in ship area (with zoom)
     if mx >= building.ship_area.x and mx < building.ship_area.x + building.ship_area.w and
        my >= building.ship_area.y and my < building.ship_area.y + building.ship_area.h then
-        building.mouse_grid_x = math.floor((mx - building.ship_area.x - 10) / 8)
-        building.mouse_grid_y = math.floor((my - building.ship_area.y - 10) / 8)
+        local cell_size = 8 * building.zoom_level
+        local grid_start_x, grid_start_y = get_centered_grid_start(cell_size)
+        building.mouse_grid_x = math.floor((mx - grid_start_x) / cell_size)
+        building.mouse_grid_y = math.floor((my - grid_start_y) / cell_size)
     else
         building.mouse_grid_x = -1
         building.mouse_grid_y = -1
@@ -1217,8 +1598,11 @@ function update_building()
             if can_place_part(building.mouse_grid_x, building.mouse_grid_y, building.drag_pixel) then
                 place_part(building.mouse_grid_x, building.mouse_grid_y, building.drag_pixel)
 
+                -- Replace the used part with a new random one when dragging from palette
+                if building.drag_source == "palette" then
+                    building.available_pixels[building.drag_source_index] = select_random_part()
                 -- If dragging from ship, remove the original
-                if building.drag_source == "ship" then
+                elseif building.drag_source == "ship" then
                     remove_part_at_index(building.drag_source_index)
                 end
             end
@@ -1249,32 +1633,42 @@ function draw_building()
     cls(7) -- Dark green background
 
     -- Title
-    print("SHIP BUILDER", 80, 5, 15, false, 1, true)
+    print("BUILD", 110, 5, 15, false, 1, true)
 
     -- Ship building area
     rect(building.ship_area.x, building.ship_area.y, building.ship_area.w, building.ship_area.h, 5)
     rectb(building.ship_area.x, building.ship_area.y, building.ship_area.w, building.ship_area.h, 12)
     print("SHIP", building.ship_area.x + 5, building.ship_area.y - 8, 12)
 
-    -- Draw grid in ship area
-    for gx = 0, 13 do
-        for gy = 0, 10 do
-            local px = building.ship_area.x + 10 + gx * 8
-            local py = building.ship_area.y + 10 + gy * 8
+    -- Draw grid in ship area (with zoom and clipping)
+    clip(building.ship_area.x, building.ship_area.y, building.ship_area.w, building.ship_area.h)
+    local cell_size = 8 * building.zoom_level  -- Remove floor for better alignment
+    local grid_start_x, grid_start_y = get_centered_grid_start(cell_size)
 
-            -- Highlight valid placement positions
-            if building.dragging and can_place_part(gx, gy, building.drag_pixel) then
-                rect(px, py, 8, 8, 3) -- Dark green for valid
-            elseif gx == building.mouse_grid_x and gy == building.mouse_grid_y then
-                rect(px, py, 8, 8, 2) -- Purple for hover
-            else
-                rectb(px, py, 8, 8, 0) -- Dark grid
+    for gx = 0, GRID_WIDTH - 1 do
+        for gy = 0, GRID_HEIGHT - 1 do
+            local px = grid_start_x + gx * cell_size
+            local py = grid_start_y + gy * cell_size
+
+            -- Only draw if visible in the clipped area
+            if px + cell_size >= building.ship_area.x and px < building.ship_area.x + building.ship_area.w and
+               py + cell_size >= building.ship_area.y and py < building.ship_area.y + building.ship_area.h then
+
+                -- Highlight valid placement positions
+                if building.dragging and can_place_part(gx, gy, building.drag_pixel) then
+                    rect(px, py, cell_size, cell_size, 3) -- Dark green for valid
+                elseif gx == building.mouse_grid_x and gy == building.mouse_grid_y then
+                    rect(px, py, cell_size, cell_size, 2) -- Purple for hover
+                else
+                    rectb(px, py, cell_size, cell_size, 0) -- Dark grid
+                end
             end
         end
     end
 
-    -- Draw ship parts
-    draw_ship_in_builder(building.ship_area.x + 10, building.ship_area.y + 10)
+    -- Draw ship parts (with zoom)
+    draw_ship_in_builder_zoomed(grid_start_x, grid_start_y, cell_size)
+    clip()
 
     -- Pixel palette area
     rect(building.palette_area.x, building.palette_area.y, building.palette_area.w, building.palette_area.h, 5)
@@ -1307,21 +1701,30 @@ function draw_building()
     if building.dragging then
         local mx, my = mouse()
         local pixel_def = pixel_types[building.drag_pixel]
-        rect(mx - 4, my - 4, 8, 8, pixel_def.color)
+
+        -- Snap to grid when over ship area for better visual feedback
+        if mx >= building.ship_area.x and mx < building.ship_area.x + building.ship_area.w and
+           my >= building.ship_area.y and my < building.ship_area.y + building.ship_area.h and
+           building.mouse_grid_x >= 0 and building.mouse_grid_y >= 0 then
+            local cell_size = 8 * building.zoom_level
+            local grid_start_x = building.ship_area.x + 10 - building.grid_offset_x
+            local grid_start_y = building.ship_area.y + 10 - building.grid_offset_y
+            local snap_x = grid_start_x + building.mouse_grid_x * cell_size
+            local snap_y = grid_start_y + building.mouse_grid_y * cell_size
+            rect(snap_x, snap_y, cell_size, cell_size, pixel_def.color)
+        else
+            rect(mx - 4, my - 4, 8, 8, pixel_def.color)
+        end
     end
 
-    -- Energy status
+    -- Status bar
     local energy = get_energy_status()
     local energy_color = energy.at_limit and 2 or (energy.remaining <= 2 and 4 or 12)
-    print("Energy: " .. energy.used .. "/" .. energy.total, 10, 135, energy_color)
+    print(energy.used .. "/" .. energy.total .. "E", 10, 135, energy_color)
 
-    -- Instructions
-    print("Drag parts from right to left to build ship", 10, 125, 7)
-    print("Right-click to undo changes", 10, 131, 8)
+
     if has_core_part() then
-        print("Press A to start round " .. game.level, 140, 125, 11)
-    else
-        print("Need core part to start!", 140, 125, 8)
+        print("A: Start Round " .. game.level, 140, 125, 11)
     end
 end
 
@@ -1363,7 +1766,7 @@ end
 
 function can_place_part(gx, gy, part_type)
     -- Can't place outside grid bounds
-    if gx < 0 or gx > 13 or gy < 0 or gy > 10 then
+    if gx < 0 or gx >= GRID_WIDTH or gy < 0 or gy >= GRID_HEIGHT then
         return false
     end
 
@@ -1410,12 +1813,19 @@ function place_part(gx, gy, part_type)
     end
 
     -- Add new part
-    table.insert(player.pixels, {
+    local new_pixel = {
         x = gx,
         y = gy,
         type = part_type,
         health = pixel_types[part_type].health
-    })
+    }
+
+    -- Add dodge cooldown for dodge parts
+    if part_type == "dodge" then
+        new_pixel.dodge_cooldown = 0
+    end
+
+    table.insert(player.pixels, new_pixel)
     table.insert(player.last_shoot_times, 0)
 end
 
@@ -1423,6 +1833,28 @@ function remove_part_at_index(index)
     if index > 0 and index <= #player.pixels then
         table.remove(player.pixels, index)
         table.remove(player.last_shoot_times, index)
+    end
+end
+
+function draw_ship_in_builder_zoomed(grid_start_x, grid_start_y, cell_size)
+    for _, pixel in ipairs(player.pixels) do
+        if pixel.health > 0 then
+            local px = grid_start_x + pixel.x * cell_size
+            local py = grid_start_y + pixel.y * cell_size
+            local pixel_def = pixel_types[pixel.type]
+
+            rect(px, py, cell_size, cell_size, pixel_def.color)
+
+            -- Draw border for core part
+            if pixel_def.is_core then
+                rectb(px, py, cell_size, cell_size, 15)
+            end
+
+            -- Draw synergy highlight
+            if is_part_synergized(pixel.x, pixel.y) then
+                rectb(px, py, cell_size, cell_size, 12) -- White border for synergized parts
+            end
+        end
     end
 end
 
@@ -1492,6 +1924,32 @@ function draw_ship(x, y, pixels, scale)
                         rectb(px-1, py-1, size+2, size+2, 4) -- Yellow outline
                     end
                 end
+
+                -- Dodge effect - purple glow during iframes
+                if player.dodge_iframes > 0 then
+                    local dodge_pulse = math.sin(game.timer * 0.5) * 0.5 + 0.5
+                    if dodge_pulse > 0.2 then
+                        rectb(px-1, py-1, size+2, size+2, 1) -- Purple outline
+                    end
+                end
+
+                -- Dodge cooldown indicator for dodge parts
+                if pixel.type == "dodge" and pixel.dodge_cooldown and pixel.dodge_cooldown > 0 then
+                    local cooldown_ratio = pixel.dodge_cooldown / 120 -- 120 = max cooldown
+                    local indicator_height = math.floor(size * cooldown_ratio)
+
+                    -- Draw cooldown bar overlay (semi-transparent dark)
+                    for cy = 0, indicator_height - 1 do
+                        for cx = 0, size - 1 do
+                            if (cx + cy) % 2 == 0 then -- Checkerboard pattern for transparency effect
+                                pix(px + cx, py + cy, 0) -- Black pixels
+                            end
+                        end
+                    end
+
+                    -- Draw cooldown border
+                    rectb(px, py, size, indicator_height, 14) -- Grey border for cooldown area
+                end
             end
         end
     end
@@ -1547,6 +2005,61 @@ function get_ship_bounds()
     end
 
     return {min_x=min_x, max_x=max_x, min_y=min_y, max_y=max_y}
+end
+
+function get_ship_center_fighting()
+    -- Get ship center in fighting scene coordinates (independent of building grid)
+    -- Now that we've fixed ship positioning, player.x and player.y represent the actual center
+    return player.x, player.y
+end
+
+function get_ship_fighting_position()
+    -- Calculate where to draw the ship so it appears properly positioned
+    -- This accounts for the ship's bounds so player.x, player.y represents the ship center
+    local ship_bounds = get_ship_bounds()
+    if ship_bounds.min_x == math.huge then
+        return player.x, player.y -- Default if no ship parts
+    end
+
+    -- Calculate offset to center the ship bounds around player.x, player.y
+    local center_x = (ship_bounds.min_x + ship_bounds.max_x) / 2
+    local center_y = (ship_bounds.min_y + ship_bounds.max_y) / 2
+
+    -- Return position that will center the ship when drawn
+    local draw_x = player.x - (center_x * 6 * GAME_SHIP_SCALE)
+    local draw_y = player.y - (center_y * 6 * GAME_SHIP_SCALE)
+
+    return draw_x, draw_y
+end
+
+function get_ship_core_position()
+    -- Find the first core part to center the building grid around
+    for _, pixel in ipairs(player.pixels) do
+        if pixel.health > 0 and pixel_types[pixel.type].is_core then
+            return pixel.x, pixel.y
+        end
+    end
+    -- If no core found, return center of ship bounds
+    local ship_bounds = get_ship_bounds()
+    if ship_bounds.min_x == math.huge then
+        return 0, 0 -- Default position
+    end
+    return (ship_bounds.min_x + ship_bounds.max_x) / 2, (ship_bounds.min_y + ship_bounds.max_y) / 2
+end
+
+function get_centered_grid_start(cell_size)
+    -- Calculate grid start position to center the core in the ship area
+    local core_x, core_y = get_ship_core_position()
+
+    -- Center of the ship area
+    local center_x = building.ship_area.x + building.ship_area.w / 2
+    local center_y = building.ship_area.y + building.ship_area.h / 2
+
+    -- Calculate where the grid should start so the core appears in the center
+    local grid_start_x = center_x - (core_x * cell_size) - building.grid_offset_x
+    local grid_start_y = center_y - (core_y * cell_size) - building.grid_offset_y
+
+    return grid_start_x, grid_start_y
 end
 
 function is_position_valid(x, y)
@@ -1748,13 +2261,24 @@ function count_parts_of_type(part_type)
 end
 
 function select_random_part()
-    local available_parts = {"armor", "engine", "shooter", "generator", "laser", "reflector", "hardpoint", "repulsor", "homing", "explosive", "shield", "core"}
+    local available_parts = {"armor", "engine", "shooter", "generator", "laser", "dodge", "hardpoint", "repulsor", "homing", "explosive", "shield", "core", "magnet", "relay", "conduit", "catalyst", "targeting"}
     local total_weight = 0
     local weights = {}
+
+    -- Check if near energy limit to bias toward generators
+    local energy = get_energy_status()
+    local energy_ratio = energy.remaining / energy.total
+    local near_limit = energy_ratio < 0.2 -- Less than 20% energy remaining
 
     -- Calculate weighted selection based on appearance chances
     for _, part_type in ipairs(available_parts) do
         local chance = get_part_appearance_chance(part_type)
+
+        -- Heavily bias toward generators when near energy limit
+        if near_limit and part_type == "generator" then
+            chance = chance * 5 -- 5x more likely to get generators when low on energy
+        end
+
         weights[part_type] = chance
         total_weight = total_weight + chance
     end
@@ -1782,23 +2306,42 @@ end
 function detect_synergies()
     active_synergies = {}
 
+    -- Check for catalyst parts to reduce requirements
+    local catalyst_count = count_parts_of_type("catalyst")
+    local requirement_reduction = catalyst_count > 0 and 1 or 0 -- Reduce min requirements by 1 if catalyst present
+
     for synergy_id, synergy_def in pairs(synergy_definitions) do
         local matches = {}
 
-        if synergy_def.pattern_type == "line" then
-            matches = detect_line_patterns(synergy_def)
-        elseif synergy_def.pattern_type == "cluster" then
-            matches = detect_cluster_patterns(synergy_def)
-        elseif synergy_def.pattern_type == "adjacent" then
-            matches = detect_adjacent_patterns(synergy_def)
-        elseif synergy_def.pattern_type == "cross" then
-            matches = detect_cross_patterns(synergy_def)
+        -- Create modified synergy definition with reduced requirements
+        local modified_def = {}
+        for k, v in pairs(synergy_def) do
+            modified_def[k] = v
+        end
+
+        -- Apply catalyst reduction
+        if modified_def.min_length then
+            modified_def.min_length = math.max(2, modified_def.min_length - requirement_reduction)
+        end
+        if modified_def.min_count then
+            modified_def.min_count = math.max(2, modified_def.min_count - requirement_reduction)
+        end
+
+        if modified_def.pattern_type == "line" then
+            matches = detect_line_patterns(modified_def)
+        elseif modified_def.pattern_type == "cluster" then
+            matches = detect_cluster_patterns(modified_def)
+        elseif modified_def.pattern_type == "adjacent" then
+            matches = detect_adjacent_patterns(modified_def)
+        elseif modified_def.pattern_type == "cross" then
+            matches = detect_cross_patterns(modified_def)
         end
 
         if #matches > 0 then
             active_synergies[synergy_id] = {
-                definition = synergy_def,
-                matches = matches
+                definition = synergy_def, -- Store original for effects
+                matches = matches,
+                catalyst_boosted = catalyst_count > 0
             }
         end
     end
@@ -1810,9 +2353,9 @@ function detect_line_patterns(synergy_def)
     local min_length = synergy_def.min_length
 
     -- Check horizontal lines
-    for y = 0, 10 do
+    for y = 0, GRID_HEIGHT - 1 do
         local line_parts = {}
-        for x = 0, 13 do
+        for x = 0, GRID_WIDTH - 1 do
             local part = get_part_at_position(x, y)
             if part and part.health > 0 and part.type == required_type then
                 table.insert(line_parts, {x = x, y = y, part = part})
@@ -1829,9 +2372,9 @@ function detect_line_patterns(synergy_def)
     end
 
     -- Check vertical lines
-    for x = 0, 13 do
+    for x = 0, GRID_WIDTH - 1 do
         local line_parts = {}
-        for y = 0, 10 do
+        for y = 0, GRID_HEIGHT - 1 do
             local part = get_part_at_position(x, y)
             if part and part.health > 0 and part.type == required_type then
                 table.insert(line_parts, {x = x, y = y, part = part})
@@ -1952,6 +2495,8 @@ end
 function find_connected_parts(start_x, start_y, part_type, visited)
     local cluster = {}
     local queue = {{x = start_x, y = start_y}}
+    local conduit_count = count_parts_of_type("conduit")
+    local bridge_range = conduit_count > 0 and 2 or 1 -- Conduits allow connections across 1 gap
 
     while #queue > 0 do
         local current = table.remove(queue, 1)
@@ -1964,17 +2509,16 @@ function find_connected_parts(start_x, start_y, part_type, visited)
             if part and part.health > 0 and part.type == part_type then
                 table.insert(cluster, {x = current.x, y = current.y, part = part})
 
-                -- Add adjacent positions to queue
-                local adjacent = {
-                    {x = current.x - 1, y = current.y},
-                    {x = current.x + 1, y = current.y},
-                    {x = current.x, y = current.y - 1},
-                    {x = current.x, y = current.y + 1}
-                }
-
-                for _, adj in ipairs(adjacent) do
-                    if adj.x >= 0 and adj.x <= 13 and adj.y >= 0 and adj.y <= 10 then
-                        table.insert(queue, adj)
+                -- Add positions within bridge range
+                for dx = -bridge_range, bridge_range do
+                    for dy = -bridge_range, bridge_range do
+                        if (dx == 0 and math.abs(dy) <= bridge_range) or (dy == 0 and math.abs(dx) <= bridge_range) then
+                            local adj_x = current.x + dx
+                            local adj_y = current.y + dy
+                            if adj_x >= 0 and adj_x < GRID_WIDTH and adj_y >= 0 and adj_y < GRID_HEIGHT then
+                                table.insert(queue, {x = adj_x, y = adj_y})
+                            end
+                        end
                     end
                 end
             end
@@ -1986,16 +2530,21 @@ end
 
 function find_adjacent_parts(x, y, part_type)
     local adjacent_parts = {{x = x, y = y, part = get_part_at_position(x, y)}}
-    local directions = {
-        {dx = -1, dy = 0}, {dx = 1, dy = 0},
-        {dx = 0, dy = -1}, {dx = 0, dy = 1}
-    }
+    local conduit_count = count_parts_of_type("conduit")
+    local bridge_range = conduit_count > 0 and 2 or 1 -- Conduits allow connections across 1 gap
 
-    for _, dir in ipairs(directions) do
-        local adj_x, adj_y = x + dir.dx, y + dir.dy
-        local part = get_part_at_position(adj_x, adj_y)
-        if part and part.health > 0 and part.type == part_type then
-            table.insert(adjacent_parts, {x = adj_x, y = adj_y, part = part})
+    -- Check all positions within bridge range
+    for dx = -bridge_range, bridge_range do
+        for dy = -bridge_range, bridge_range do
+            if (dx == 0 and math.abs(dy) <= bridge_range) or (dy == 0 and math.abs(dx) <= bridge_range) then
+                if not (dx == 0 and dy == 0) then -- Skip the center position
+                    local adj_x, adj_y = x + dx, y + dy
+                    local part = get_part_at_position(adj_x, adj_y)
+                    if part and part.health > 0 and part.type == part_type then
+                        table.insert(adjacent_parts, {x = adj_x, y = adj_y, part = part})
+                    end
+                end
+            end
         end
     end
 
@@ -2023,6 +2572,16 @@ function find_closest_enemy(x, y)
 end
 
 function create_explosion(x, y, radius)
+    -- Add visual explosion effect
+    table.insert(explosions, {
+        x = x,
+        y = y,
+        radius = radius,
+        max_radius = radius,
+        lifetime = 30, -- 0.5 seconds at 60fps
+        max_lifetime = 30
+    })
+
     for i = #enemies, 1, -1 do
         local enemy = enemies[i]
         local dx = enemy.x + enemy.size/2 - x
@@ -2092,7 +2651,8 @@ end
 function calculate_special_effects()
     local effects = {
         double_pick = false,
-        repulsor_parts = {}
+        repulsor_parts = {},
+        amplified_pick = false
     }
 
     for i, pixel in ipairs(player.pixels) do
@@ -2100,6 +2660,27 @@ function calculate_special_effects()
             local pixel_def = pixel_types[pixel.type]
             if pixel_def.special_effect == "double_pick" then
                 effects.double_pick = true
+
+                -- Check for adjacent relay parts for amplification
+                local has_relay_boost = false
+                local directions = {
+                    {dx = -1, dy = 0}, {dx = 1, dy = 0},
+                    {dx = 0, dy = -1}, {dx = 0, dy = 1}
+                }
+
+                for _, dir in ipairs(directions) do
+                    local adj_x = pixel.x + dir.dx
+                    local adj_y = pixel.y + dir.dy
+                    local adj_part = get_part_at_position(adj_x, adj_y)
+                    if adj_part and adj_part.health > 0 and pixel_types[adj_part.type].special_effect == "relay" then
+                        has_relay_boost = true
+                        break
+                    end
+                end
+
+                if has_relay_boost then
+                    effects.amplified_pick = true -- Relay amplifies hardpoint from +1 to +2 picks
+                end
             elseif pixel_def.special_effect == "repulse" then
                 table.insert(effects.repulsor_parts, {index = i, pixel = pixel})
             end
@@ -2119,27 +2700,43 @@ function apply_special_effects()
     game.parts_per_upgrade = 1
 
     -- Apply effects
-    if effects.double_pick then
+    if effects.amplified_pick then
+        game.parts_per_upgrade = math.min(game.parts_per_upgrade + 2, game.max_parts_per_upgrade) -- Relay amplifies to +2
+    elseif effects.double_pick then
         game.parts_per_upgrade = math.min(game.parts_per_upgrade + 1, game.max_parts_per_upgrade)
     end
 end
 
 function repulsor_pulse(pulse_x, pulse_y)
-    local pulse_radius = 60 -- Range of repulsor effect
-    local push_force = 40   -- How far to push enemies
+    local pulse_radius = 80 -- Increased range of repulsor effect
+    local push_force = 60   -- Increased push force
+
+    -- Count repulsors for scaling effect
+    local repulsor_count = count_parts_of_type("repulsor")
+    local scaled_radius = pulse_radius + (repulsor_count - 1) * 15 -- +15 radius per additional repulsor
+    local scaled_force = push_force + (repulsor_count - 1) * 10   -- +10 force per additional repulsor
 
     for i, enemy in ipairs(enemies) do
         local dx = enemy.x - pulse_x
         local dy = enemy.y - pulse_y
         local distance = math.sqrt(dx * dx + dy * dy)
 
-        if distance < pulse_radius and distance > 0 then
+        if distance < scaled_radius and distance > 0 then
             -- Normalize direction and apply push force
-            local push_x = (dx / distance) * push_force
-            local push_y = (dy / distance) * push_force
+            local push_x = (dx / distance) * scaled_force
+            local push_y = (dy / distance) * scaled_force
 
             enemy.x = enemy.x + push_x
             enemy.y = enemy.y + push_y
+
+            -- Damage enemies that are very close to the pulse
+            if distance < scaled_radius * 0.4 then
+                enemy.health = enemy.health - 1
+                if enemy.health <= 0 then
+                    game.score = game.score + enemy_types[enemy.type].score
+                    table.remove(enemies, i)
+                end
+            end
 
             -- Keep enemies in bounds after push
             enemy.x = math.max(-enemy.size, math.min(250, enemy.x))
