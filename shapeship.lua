@@ -263,17 +263,295 @@ local enemy_types = {
     }
 }
 
--- Display constants
-local GAME_SHIP_SCALE = 0.5 -- Ship scale during gameplay (3x3 pixels per part)
--- TODO: Consider dynamic scaling based on ship size or game state
+-- Display constants - dynamic scaling based on ship dimensions
 
 -- Grid constants
 local GRID_WIDTH = 64  -- Grid width in cells
 local GRID_HEIGHT = 64 -- Grid height in cells
 
+-- Ship template definitions (12 slots total - first is custom)
+local ship_templates = {
+    -- Slot 1: Custom builder (special case)
+    {
+        name = "Custom",
+        description = "Design your own",
+        is_custom = true,
+        unlocked = true
+    },
+    -- Slot 2: Basic starter
+    {
+        name = "Rookie",
+        description = "Basic starter ship",
+        start_level = 1,
+        base_energy = 20,
+        scrap_collected = 0,
+        unlocked = true,
+        pixels = {
+            {x=30, y=30, type="armor", health=2},
+            {x=31, y=30, type="armor", health=2},
+            {x=30, y=31, type="core", health=1},
+            {x=31, y=31, type="generator", health=1},
+            {x=32, y=31, type="shooter", health=1},
+            {x=30, y=32, type="armor", health=2},
+            {x=31, y=32, type="armor", health=2}
+        }
+    },
+    -- Slot 3: Speed build
+    {
+        name = "Scout",
+        description = "Fast and agile",
+        start_level = 3,
+        base_energy = 25,
+        scrap_collected = 10,
+        unlocked = true,
+        pixels = {
+            {x=30, y=30, type="engine", health=1},
+            {x=31, y=30, type="engine", health=1},
+            {x=32, y=30, type="engine", health=1},
+            {x=30, y=31, type="dodge", health=1},
+            {x=31, y=31, type="core", health=1},
+            {x=32, y=31, type="dodge", health=1},
+            {x=30, y=32, type="generator", health=1},
+            {x=31, y=32, type="shooter", health=1},
+            {x=32, y=32, type="generator", health=1}
+        }
+    },
+    -- Slot 4: Firepower build
+    {
+        name = "Gunboat",
+        description = "Heavy firepower",
+        start_level = 4,
+        base_energy = 35,
+        scrap_collected = 15,
+        unlocked = true,
+        pixels = {
+            {x=29, y=30, type="shooter", health=1},
+            {x=30, y=30, type="laser", health=1},
+            {x=31, y=30, type="shooter", health=1},
+            {x=29, y=31, type="generator", health=1},
+            {x=30, y=31, type="core", health=1},
+            {x=31, y=31, type="generator", health=1},
+            {x=32, y=31, type="hardpoint", health=1},
+            {x=29, y=32, type="shooter", health=1},
+            {x=30, y=32, type="laser", health=1},
+            {x=31, y=32, type="shooter", health=1}
+        }
+    },
+    -- Slot 5: Tank build
+    {
+        name = "Fortress",
+        description = "Maximum defense",
+        start_level = 5,
+        base_energy = 40,
+        scrap_collected = 20,
+        unlocked = true,
+        pixels = {
+            {x=29, y=29, type="shield", health=3},
+            {x=30, y=29, type="armor", health=2},
+            {x=31, y=29, type="shield", health=3},
+            {x=29, y=30, type="armor", health=2},
+            {x=30, y=30, type="generator", health=1},
+            {x=31, y=30, type="armor", health=2},
+            {x=29, y=31, type="core", health=1},
+            {x=30, y=31, type="repulsor", health=1},
+            {x=31, y=31, type="core", health=1},
+            {x=29, y=32, type="armor", health=2},
+            {x=30, y=32, type="generator", health=1},
+            {x=31, y=32, type="armor", health=2},
+            {x=32, y=32, type="shooter", health=1}
+        }
+    },
+    -- Slot 6: Missile specialist
+    {
+        name = "Seeker",
+        description = "Homing missiles",
+        start_level = 6,
+        base_energy = 30,
+        scrap_collected = 25,
+        unlocked = true,
+        pixels = {
+	    --{x=30, y=29, type="homing", health=1},
+            --{x=31, y=29, type="homing", health=1},
+            --{x=32, y=29, type="homing", health=1},
+            {x=30, y=30, type="generator", health=1},
+            {x=31, y=30, type="targeting", health=1},
+            {x=32, y=30, type="generator", health=1},
+            {x=31, y=31, type="core", health=1},
+
+            --{x=10, y=29, type="homing", health=1},
+            --{x=11, y=29, type="homing", health=1},
+            --{x=12, y=29, type="homing", health=1},
+            {x=10, y=30, type="generator", health=1},
+            {x=11, y=30, type="targeting", health=1},
+            {x=12, y=30, type="generator", health=1},
+            {x=11, y=31, type="core", health=1}
+
+        }
+    },
+    -- Slot 7: Explosive specialist
+    {
+        name = "Bomber",
+        description = "Explosive specialist",
+        start_level = 7,
+        base_energy = 45,
+        scrap_collected = 30,
+        unlocked = true,
+        pixels = {
+            {x=30, y=29, type="explosive", health=1},
+            {x=31, y=29, type="explosive", health=1},
+            {x=32, y=29, type="explosive", health=1},
+            {x=29, y=30, type="generator", health=1},
+            {x=30, y=30, type="catalyst", health=1},
+            {x=31, y=30, type="core", health=1},
+            {x=32, y=30, type="catalyst", health=1},
+            {x=33, y=30, type="generator", health=1},
+            {x=30, y=31, type="armor", health=2},
+            {x=31, y=31, type="armor", health=2},
+            {x=32, y=31, type="armor", health=2}
+        }
+    },
+    -- Slot 8: Speed demon
+    {
+        name = "Interceptor",
+        description = "Lightning fast",
+        start_level = 8,
+        base_energy = 35,
+        scrap_collected = 35,
+        unlocked = true,
+        pixels = {
+            {x=29, y=30, type="engine", health=1},
+            {x=30, y=30, type="engine", health=1},
+            {x=31, y=30, type="engine", health=1},
+            {x=32, y=30, type="engine", health=1},
+            {x=30, y=31, type="dodge", health=1},
+            {x=31, y=31, type="core", health=1},
+            {x=32, y=31, type="dodge", health=1},
+            {x=29, y=32, type="generator", health=1},
+            {x=30, y=32, type="accelerator", health=1},
+            {x=31, y=32, type="laser", health=1},
+            {x=32, y=32, type="accelerator", health=1},
+            {x=33, y=32, type="generator", health=1}
+        }
+    },
+    -- Slot 9: Massive multi-part ship
+    {
+        name = "Carrier",
+        description = "Massive ship",
+        start_level = 9,
+        base_energy = 60,
+        scrap_collected = 40,
+        unlocked = true,
+        pixels = {
+            {x=28, y=28, type="shield", health=3},
+            {x=29, y=28, type="shooter", health=1},
+            {x=30, y=28, type="laser", health=1},
+            {x=31, y=28, type="laser", health=1},
+            {x=32, y=28, type="shooter", health=1},
+            {x=33, y=28, type="shield", health=3},
+            {x=28, y=29, type="generator", health=1},
+            {x=29, y=29, type="armor", health=2},
+            {x=30, y=29, type="hardpoint", health=1},
+            {x=31, y=29, type="hardpoint", health=1},
+            {x=32, y=29, type="armor", health=2},
+            {x=33, y=29, type="generator", health=1},
+            {x=29, y=30, type="core", health=1},
+            {x=30, y=30, type="repulsor", health=1},
+            {x=31, y=30, type="repulsor", health=1},
+            {x=32, y=30, type="core", health=1},
+            {x=28, y=31, type="generator", health=1},
+            {x=29, y=31, type="shooter", health=1},
+            {x=30, y=31, type="targeting", health=1},
+            {x=31, y=31, type="targeting", health=1},
+            {x=32, y=31, type="shooter", health=1},
+            {x=33, y=31, type="generator", health=1}
+        }
+    },
+    -- Slot 10: Hit and run specialist
+    {
+        name = "Stealth",
+        description = "Hit and run",
+        start_level = 6,
+        base_energy = 28,
+        scrap_collected = 25,
+        unlocked = true,
+        pixels = {
+            {x=31, y=30, type="dodge", health=1},
+            {x=30, y=31, type="engine", health=1},
+            {x=31, y=31, type="core", health=1},
+            {x=32, y=31, type="engine", health=1},
+            {x=30, y=32, type="generator", health=1},
+            {x=31, y=32, type="laser", health=1},
+            {x=32, y=32, type="generator", health=1}
+        }
+    },
+    -- Slot 11: Ultimate tank
+    {
+        name = "Titan",
+        description = "Ultimate defense",
+        start_level = 10,
+        base_energy = 55,
+        scrap_collected = 45,
+        unlocked = true,
+        pixels = {
+            {x=29, y=28, type="shield", health=3},
+            {x=30, y=28, type="shield", health=3},
+            {x=31, y=28, type="shield", health=3},
+            {x=28, y=29, type="shield", health=3},
+            {x=29, y=29, type="armor", health=2},
+            {x=30, y=29, type="core", health=1},
+            {x=31, y=29, type="armor", health=2},
+            {x=32, y=29, type="shield", health=3},
+            {x=28, y=30, type="armor", health=2},
+            {x=29, y=30, type="generator", health=1},
+            {x=30, y=30, type="repulsor", health=1},
+            {x=31, y=30, type="generator", health=1},
+            {x=32, y=30, type="armor", health=2},
+            {x=28, y=31, type="shield", health=3},
+            {x=29, y=31, type="core", health=1},
+            {x=30, y=31, type="core", health=1},
+            {x=31, y=31, type="core", health=1},
+            {x=32, y=31, type="shield", health=3},
+            {x=29, y=32, type="armor", health=2},
+            {x=30, y=32, type="shooter", health=1},
+            {x=31, y=32, type="armor", health=2}
+        }
+    },
+    -- Slot 12: Balanced powerhouse
+    {
+        name = "Vanguard",
+        description = "Balanced assault",
+        start_level = 8,
+        base_energy = 50,
+        scrap_collected = 35,
+        unlocked = true,
+        pixels = {
+            {x=29, y=29, type="homing", health=1},
+            {x=30, y=29, type="laser", health=1},
+            {x=31, y=29, type="shooter", health=1},
+            {x=32, y=29, type="homing", health=1},
+            {x=29, y=30, type="generator", health=1},
+            {x=30, y=30, type="accelerator", health=1},
+            {x=31, y=30, type="accelerator", health=1},
+            {x=32, y=30, type="generator", health=1},
+            {x=29, y=31, type="dodge", health=1},
+            {x=30, y=31, type="core", health=1},
+            {x=31, y=31, type="shield", health=3},
+            {x=32, y=31, type="dodge", health=1},
+            {x=30, y=32, type="engine", health=1},
+            {x=31, y=32, type="engine", health=1}
+        }
+    },
+    {name = "Experimental", description = "Prototype design", unlocked = false},
+    {name = "Swarm", description = "Multi-part build", unlocked = false},
+    {name = "Hybrid", description = "Mixed tactics", unlocked = false},
+    {name = "Elite", description = "Advanced systems", unlocked = false},
+    {name = "Phoenix", description = "Regenerative ship", unlocked = false},
+    {name = "Omega", description = "Ultimate power", unlocked = false}
+}
+
 -- Game state
 local game = {
-    state = "menu",     -- menu, building, playing, upgrading, gameover
+    state = "ship_select", -- ship_select, menu, building, playing, upgrading, gameover
     level = 1,
     score = 0,
     lives = 3,
@@ -285,7 +563,8 @@ local game = {
     spawn_rate = 120, -- Base spawn rate
     difficulty_multiplier = 1.0,
     parts_per_upgrade = 1, -- Can be increased by special effects
-    max_parts_per_upgrade = 2
+    max_parts_per_upgrade = 6, -- Allow multiple hardpoints to stack
+    selected_template = 1 -- Index of selected ship template
 }
 
 -- Player ship
@@ -352,7 +631,7 @@ function init_ship()
         {x=30, y=30, type="armor", health=pixel_types.armor.health},
         {x=31, y=30, type="armor", health=pixel_types.armor.health},
         {x=30, y=31, type="core", health=pixel_types.core.health},
-        {x=31, y=31, type="targeting", health=pixel_types.generator.health}, -- targeting for debug
+        {x=31, y=31, type="generator", health=pixel_types.generator.health},
         {x=32, y=31, type="shooter", health=pixel_types.shooter.health},
         {x=30, y=32, type="armor", health=pixel_types.armor.health},
         {x=31, y=32, type="armor", health=pixel_types.armor.health}
@@ -368,7 +647,10 @@ end
 function TIC()
     game.timer = game.timer + 1
 
-    if game.state == "menu" then
+    if game.state == "ship_select" then
+        update_ship_select()
+        draw_ship_select()
+    elseif game.state == "menu" then
         update_menu()
         draw_menu()
     elseif game.state == "building" then
@@ -386,14 +668,176 @@ function TIC()
     end
 end
 
+-- === SHIP SELECT STATE ===
+function update_ship_select()
+    -- Grid-based navigation (7x3 grid for 21 slots)
+    local cols = 7
+    local rows = 3
+    local current_col = ((game.selected_template - 1) % cols) + 1
+    local current_row = math.floor((game.selected_template - 1) / cols) + 1
+
+    -- Mouse input
+    local mx, my, left = mouse()
+
+    -- Card layout constants (must match draw_ship_select)
+    local card_size = 28
+    local start_x = 12
+    local start_y = 20
+    local spacing = 3
+
+    -- Check mouse hover over cards
+    local mouse_template = 0
+    for i = 1, 21 do
+        local col = ((i - 1) % cols) + 1
+        local row = math.floor((i - 1) / cols) + 1
+        local x = start_x + (col - 1) * (card_size + spacing)
+        local y = start_y + (row - 1) * (card_size + spacing)
+
+        if mx >= x and mx < x + card_size and my >= y and my < y + card_size then
+            mouse_template = i
+            break
+        end
+    end
+
+    -- Update selection based on mouse hover
+    if mouse_template > 0 then
+        game.selected_template = mouse_template
+        current_col = ((game.selected_template - 1) % cols) + 1
+        current_row = math.floor((game.selected_template - 1) / cols) + 1
+    end
+
+    -- Keyboard navigation
+    if btnp(2) then -- Left
+        current_col = current_col - 1
+        if current_col < 1 then current_col = cols end
+    elseif btnp(3) then -- Right
+        current_col = current_col + 1
+        if current_col > cols then current_col = 1 end
+    elseif btnp(0) then -- Up
+        current_row = current_row - 1
+        if current_row < 1 then current_row = rows end
+    elseif btnp(1) then -- Down
+        current_row = current_row + 1
+        if current_row > rows then current_row = 1 end
+    end
+
+    -- Convert back to index (only for keyboard navigation)
+    if mouse_template == 0 then
+        game.selected_template = (current_row - 1) * cols + current_col
+    end
+
+    -- Clamp to valid range (18 total ships, but allow navigation to empty slots)
+    if game.selected_template > 21 then
+        game.selected_template = 21
+    end
+
+    -- Selection - A button or mouse click
+    if btnp(4) or left then
+        local template = ship_templates[game.selected_template]
+        if template and template.unlocked then
+            if template.is_custom then
+                -- Custom ship builder
+                game.state = "upgrading"
+                init_ship()
+                start_initial_upgrade()
+            else
+                -- Load template ship
+                load_ship_template(template)
+                game.state = "playing"
+                reset_round()
+            end
+        end
+    end
+end
+
+function draw_ship_select()
+    cls(0) -- Black background
+
+    print("SELECT YOUR SHIP", 85, 5, 12, false, 1, true)
+
+    -- Card grid layout (7x3) - optimized for more ships
+    local cols = 7
+    local rows = 3
+    local card_size = 28
+    local start_x = 12
+    local start_y = 20
+    local spacing = 3
+
+    -- Draw ship cards
+    for i = 1, 21 do
+        local template = ship_templates[i]
+        local col = ((i - 1) % cols) + 1
+        local row = math.floor((i - 1) / cols) + 1
+
+        local x = start_x + (col - 1) * (card_size + spacing)
+        local y = start_y + (row - 1) * (card_size + spacing)
+
+        -- Card background
+        local is_selected = (game.selected_template == i)
+        local card_color = is_selected and 12 or (template and template.unlocked and 13 or 0)
+        local border_color = is_selected and 11 or (template and template.unlocked and 15 or 8)
+
+        rect(x, y, card_size, card_size, card_color)
+        rectb(x, y, card_size, card_size, border_color)
+
+        if template then
+            if template.unlocked then
+                -- Draw ship preview (properly centered in card)
+                if not template.is_custom and template.pixels then
+                    draw_template_preview(template, x + card_size/2, y + card_size/2, 0.5)
+                elseif template.is_custom then
+                    -- Draw custom builder icon (centered grid)
+                    local grid_start_x = x + (card_size - 12) / 2
+                    local grid_start_y = y + (card_size - 12) / 2
+                    for gx = 0, 2 do
+                        for gy = 0, 2 do
+                            rectb(grid_start_x + gx*4, grid_start_y + gy*4, 3, 3, 15)
+                        end
+                    end
+                end
+            else
+                -- Locked ship - draw lock symbol (centered)
+                if template then
+                    local lock_color = is_selected and 8 or 5
+                    local lock_x = x + (card_size - 10) / 2
+                    local lock_y = y + (card_size - 8) / 2
+                    -- Simple lock symbol
+                    rectb(lock_x, lock_y, 10, 8, lock_color)
+                    rectb(lock_x + 2, lock_y - 4, 6, 6, lock_color)
+                end
+            end
+        end
+    end
+
+    -- Description box at bottom (shorter)
+    local desc_box_y = 112
+    local desc_box_height = 20
+    rectb(5, desc_box_y, 230, desc_box_height, 15)
+    rect(6, desc_box_y + 1, 228, desc_box_height - 2, 1) -- Dark background
+
+    local selected_template = ship_templates[game.selected_template]
+    if selected_template then
+        local name_x = 10
+        local desc_x = 10
+        local name_y = desc_box_y + 2
+        local desc_y = desc_box_y + 10
+
+        print(selected_template.name, name_x, name_y, 12, false, 1, true)
+        print(selected_template.description, desc_x, desc_y, 13, false, 1, true)
+
+        -- Show start level for non-custom ships
+        if not selected_template.is_custom and selected_template.start_level then
+            print("Level " .. selected_template.start_level, 180, name_y, 10, false, 1, true)
+        end
+    end
+end
+
 -- === MENU STATE ===
 function update_menu()
     local mx, my, left = mouse()
 
     if btnp(4) or left then -- A button or mouse click
-        game.state = "upgrading"
-        init_ship()
-        start_initial_upgrade()
+        game.state = "ship_select"
     end
 end
 
@@ -556,7 +1000,7 @@ function update_shooting()
                 local synergy_effects = get_part_synergy_effects(pixel.x, pixel.y, pixel.type)
 
                 -- Create bullet at part position (match scaled ship)
-                local part_size = 6 * GAME_SHIP_SCALE
+                local part_size = 6 * get_dynamic_ship_scale()
                 local ship_draw_x, ship_draw_y = get_ship_fighting_position()
                 local bullet_x = ship_draw_x + pixel.x * part_size + part_size
                 local bullet_y = ship_draw_y + pixel.y * part_size + part_size / 2
@@ -1023,7 +1467,7 @@ function update_collisions()
         for j = #player.pixels, 1, -1 do
             local pixel = player.pixels[j]
             if pixel.health > 0 then
-                local part_size = 6 * GAME_SHIP_SCALE -- Match visual scale
+                local part_size = 6 * get_dynamic_ship_scale() -- Match visual scale
                 local ship_draw_x, ship_draw_y = get_ship_fighting_position()
                 local px = ship_draw_x + pixel.x * part_size
                 local py = ship_draw_y + pixel.y * part_size
@@ -1033,23 +1477,10 @@ function update_collisions()
                     if player.immunity_time <= 0 and player.dodge_iframes <= 0 then
                         pixel.health = pixel.health - 1
 
-                        -- Check for core destruction - use as extra life
+                        -- Check for core destruction - simple approach
                         if pixel.health <= 0 and pixel_types[pixel.type].is_core then
-                            -- Core acts as extra life - restore all ship parts when core is destroyed
-                            trace("Core destroyed! Using as extra life...")
-
-                            -- Restore all damaged parts to full health
-                            for _, restore_pixel in ipairs(player.pixels) do
-                                if restore_pixel.health <= 0 then
-                                    restore_pixel.health = pixel_types[restore_pixel.type].health
-                                end
-                            end
-
-                            -- Grant temporary immunity
-                            player.immunity_time = 180 -- 3 seconds of immunity
-
-                            -- Don't restore the core itself - it's consumed as the extra life
-                            pixel.health = 0
+                            -- Find all parts connected to this core and destroy them
+                            destroy_connected_parts(pixel.x, pixel.y)
 
                             return -- Skip normal damage processing
                         end
@@ -1080,7 +1511,7 @@ function draw_game()
 
     -- Draw player ship (scaled down for better visibility)
     local ship_draw_x, ship_draw_y = get_ship_fighting_position()
-    draw_ship(ship_draw_x, ship_draw_y, player.pixels, GAME_SHIP_SCALE)
+    draw_ship(ship_draw_x, ship_draw_y, player.pixels, get_dynamic_ship_scale())
 
     -- Draw bullets
     for _, bullet in ipairs(bullets) do
@@ -2056,8 +2487,8 @@ function get_ship_fighting_position()
     local center_y = (ship_bounds.min_y + ship_bounds.max_y) / 2
 
     -- Return position that will center the ship when drawn
-    local draw_x = player.x - (center_x * 6 * GAME_SHIP_SCALE)
-    local draw_y = player.y - (center_y * 6 * GAME_SHIP_SCALE)
+    local draw_x = player.x - (center_x * 6 * get_dynamic_ship_scale())
+    local draw_y = player.y - (center_y * 6 * get_dynamic_ship_scale())
 
     return draw_x, draw_y
 end
@@ -2344,6 +2775,86 @@ function get_homing_turn_rate(bullet_type)
     end
 
     return base_turn_rate
+end
+
+function get_dynamic_ship_scale()
+    -- Calculate ship dimensions
+    local ship_bounds = get_ship_bounds()
+    if ship_bounds.min_x == math.huge then
+        return 0.5 -- Default scale if no ship parts
+    end
+
+    local ship_width = (ship_bounds.max_x - ship_bounds.min_x + 1) * 6  -- Grid cells to pixels
+    local ship_height = (ship_bounds.max_y - ship_bounds.min_y + 1) * 6
+
+    -- Screen dimensions for gameplay area
+    local screen_width = 240
+    local screen_height = 136
+    local max_ship_width = screen_width * 0.25  -- Ship shouldn't take more than 25% of screen width
+    local max_ship_height = screen_height * 0.35 -- Ship shouldn't take more than 35% of screen height
+
+    -- Calculate scale to fit within bounds
+    local width_scale = max_ship_width / ship_width
+    local height_scale = max_ship_height / ship_height
+    local scale = math.min(width_scale, height_scale)
+
+    -- Clamp between reasonable values
+    return math.max(0.2, math.min(1.0, scale))
+end
+
+function load_ship_template(template)
+    -- Set up game state from template
+    game.level = template.start_level
+    player.base_energy = template.base_energy
+    player.scrap_collected = template.scrap_collected
+
+    -- Load ship configuration
+    player.pixels = {}
+    for _, pixel_template in ipairs(template.pixels) do
+        table.insert(player.pixels, {
+            x = pixel_template.x,
+            y = pixel_template.y,
+            type = pixel_template.type,
+            health = pixel_template.health
+        })
+    end
+
+    -- Initialize shoot timers for all parts
+    player.last_shoot_times = {}
+    for i, pixel in ipairs(player.pixels) do
+        player.last_shoot_times[i] = 0
+    end
+
+    -- Initialize synergies
+    init_synergies()
+end
+
+function draw_template_preview(template, center_x, center_y, scale)
+    -- Calculate ship bounds
+    local min_x, max_x = math.huge, -math.huge
+    local min_y, max_y = math.huge, -math.huge
+
+    for _, pixel in ipairs(template.pixels) do
+        min_x = math.min(min_x, pixel.x)
+        max_x = math.max(max_x, pixel.x)
+        min_y = math.min(min_y, pixel.y)
+        max_y = math.max(max_y, pixel.y)
+    end
+
+    -- Calculate ship center offset
+    local ship_center_x = (min_x + max_x) / 2
+    local ship_center_y = (min_y + max_y) / 2
+
+    -- Draw mini ship preview centered at given coordinates
+    for _, pixel in ipairs(template.pixels) do
+        local pixel_def = pixel_types[pixel.type]
+        if pixel_def then
+            local size = math.floor(6 * scale)
+            local px = center_x + (pixel.x - ship_center_x) * size - size/2
+            local py = center_y + (pixel.y - ship_center_y) * size - size/2
+            rect(px, py, size, size, pixel_def.color)
+        end
+    end
 end
 
 function select_random_part()
@@ -2655,6 +3166,119 @@ function find_closest_enemy(x, y)
     end
 
     return closest_enemy
+end
+
+function find_ship_fragments()
+    -- Find all connected components (ship fragments) in the ship
+    local fragments = {}
+    local visited = {}
+
+    for _, pixel in ipairs(player.pixels) do
+        if pixel.health > 0 then
+            local key = pixel.x .. "," .. pixel.y
+            if not visited[key] then
+                local fragment = find_connected_ship_parts(pixel.x, pixel.y, visited)
+                if #fragment > 0 then
+                    table.insert(fragments, fragment)
+                end
+            end
+        end
+    end
+
+    return fragments
+end
+
+function find_connected_ship_parts(start_x, start_y, visited)
+    -- Find all parts connected to the starting position (any part type)
+    local fragment = {}
+    local queue = {{x = start_x, y = start_y}}
+
+    while #queue > 0 do
+        local current = table.remove(queue, 1)
+        local key = current.x .. "," .. current.y
+
+        if not visited[key] then
+            visited[key] = true
+
+            -- Find the actual pixel at this position
+            local pixel = get_part_at_position(current.x, current.y)
+            if pixel and pixel.health > 0 then
+                table.insert(fragment, pixel)
+
+                -- Add adjacent positions to queue
+                local directions = {{0,1}, {0,-1}, {1,0}, {-1,0}}
+                for _, dir in ipairs(directions) do
+                    local nx, ny = current.x + dir[1], current.y + dir[2]
+                    local next_key = nx .. "," .. ny
+                    if not visited[next_key] then
+                        local next_pixel = get_part_at_position(nx, ny)
+                        if next_pixel and next_pixel.health > 0 then
+                            table.insert(queue, {x = nx, y = ny})
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return fragment
+end
+
+function count_cores_in_fragment(fragment)
+    -- Count how many cores are in this fragment
+    local core_count = 0
+    for _, pixel in ipairs(fragment) do
+        if pixel.health > 0 and pixel_types[pixel.type].is_core then
+            core_count = core_count + 1
+        end
+    end
+    return core_count
+end
+
+function destroy_fragment(fragment)
+    -- Destroy all parts in this fragment
+    for _, pixel in ipairs(fragment) do
+        if pixel.health > 0 then
+            pixel.health = 0
+        end
+    end
+end
+
+function destroy_connected_parts(start_x, start_y)
+    -- Simple flood fill: destroy all parts connected to this position
+    local visited = {}
+    local queue = {{x = start_x, y = start_y}}
+
+    while #queue > 0 do
+        local current = table.remove(queue, 1)
+        local key = current.x .. "," .. current.y
+
+        if not visited[key] then
+            visited[key] = true
+
+            -- Find and destroy the part at this position
+            for _, pixel in ipairs(player.pixels) do
+                if pixel.x == current.x and pixel.y == current.y then
+                    -- For starting position, include dead parts (the destroyed core)
+                    -- For other positions, only include living parts
+                    local is_start = (current.x == start_x and current.y == start_y)
+                    if pixel.health > 0 or is_start then
+                        if pixel.health > 0 then
+                            pixel.health = 0
+                        end
+
+                        -- Add adjacent positions to queue
+                        local directions = {{0,1}, {0,-1}, {1,0}, {-1,0}}
+                        for _, dir in ipairs(directions) do
+                            local nx, ny = current.x + dir[1], current.y + dir[2]
+                            table.insert(queue, {x = nx, y = ny})
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
 end
 
 function create_explosion(x, y, radius)
